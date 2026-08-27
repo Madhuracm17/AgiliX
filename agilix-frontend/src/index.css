@@ -1,0 +1,423 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color: #172033;
+  background: #f6f7fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  background: #f6f7fb;
+}
+
+.sidebar {
+  width: 240px;
+  min-height: 100vh;
+  background: #ffffff;
+  border-right: 1px solid #e7e9ef;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 14px;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 28px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.logo-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: #635bff;
+  color: white;
+  font-weight: 800;
+}
+
+.sidebar-section {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9299a8;
+  padding: 0 10px;
+  margin: 0 0 8px;
+  letter-spacing: 0.08em;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 10px 12px;
+  margin: 3px 0;
+  border-radius: 7px;
+  color: #626a7a;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sidebar-link:hover {
+  background: #f3f4f8;
+  color: #172033;
+}
+
+.sidebar-link.active {
+  background: #eeedff;
+  color: #5148d8;
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 14px 10px 4px;
+  border-top: 1px solid #e7e9ef;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-footer strong {
+  display: block;
+  font-size: 13px;
+}
+
+.sidebar-footer span {
+  display: block;
+  font-size: 11px;
+  color: #9299a8;
+  margin-top: 2px;
+}
+
+.avatar,
+.topbar-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #ddd9ff;
+  color: #5148d8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.topbar {
+  height: 64px;
+  background: white;
+  border-bottom: 1px solid #e7e9ef;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.breadcrumb {
+  color: #9299a8;
+  font-size: 13px;
+}
+
+.breadcrumb-separator {
+  margin: 0 8px;
+  color: #c5c9d2;
+}
+
+.breadcrumb-current {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.icon-button {
+  border: 1px solid #e1e4eb;
+  background: white;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.page-content {
+  padding: 34px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+
+.eyebrow {
+  margin: 0 0 7px;
+  color: #635bff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+h1 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+}
+
+.page-description {
+  color: #747c8c;
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.primary-button {
+  border: 0;
+  border-radius: 7px;
+  background: #635bff;
+  color: white;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-button:hover {
+  background: #554de0;
+}
+
+.empty-state {
+  background: white;
+  border: 1px solid #e7e9ef;
+  border-radius: 12px;
+  padding: 50px;
+  text-align: center;
+}
+
+.empty-state h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.empty-state p {
+  margin: 0;
+  color: #7c8494;
+  font-size: 14px;
+}
+
+@media (max-width: 700px) {
+  .sidebar {
+    width: 190px;
+  }
+
+  .page-content {
+    padding: 22px;
+  }
+
+  .topbar {
+    padding: 0 20px;
+  }
+}
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.project-card {
+  background: white;
+  border: 1px solid #e7e9ef;
+  border-radius: 14px;
+  padding: 22px;
+  transition: 0.2s ease;
+}
+
+.project-card:hover {
+  border-color: #c9c6ff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(23, 32, 51, 0.06);
+}
+
+.project-card-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #eeedff;
+  color: #5148d8;
+  font-weight: 800;
+  margin-bottom: 18px;
+}
+
+.project-card h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.project-card > p {
+  color: #747c8c;
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 42px;
+}
+
+.project-card-footer {
+  border-top: 1px solid #eef0f4;
+  margin-top: 18px;
+  padding-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #9299a8;
+  font-size: 12px;
+}
+
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.team-card {
+  background: white;
+  border: 1px solid #e7e9ef;
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.team-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  background: #ddd9ff;
+  color: #5148d8;
+  font-weight: 700;
+}
+
+.team-card h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.team-card p {
+  margin: 4px 0 8px;
+  color: #7c8494;
+  font-size: 12px;
+}
+
+.role-badge {
+  display: inline-block;
+  background: #f3f4f8;
+  color: #626a7a;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(23, 32, 51, 0.35);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.modal {
+  width: min(500px, 100%);
+  background: white;
+  border-radius: 16px;
+  padding: 26px;
+  box-shadow: 0 20px 60px rgba(23, 32, 51, 0.18);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.modal-close {
+  border: 0;
+  background: transparent;
+  font-size: 26px;
+  color: #7c8494;
+  cursor: pointer;
+}
+
+.modal form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3f4757;
+}
+
+.modal input,
+.modal textarea {
+  width: 100%;
+  border: 1px solid #dfe2e9;
+  border-radius: 8px;
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.modal input:focus,
+.modal textarea:focus {
+  border-color: #635bff;
+}
+
+.modal-submit {
+  margin-top: 4px;
+}
