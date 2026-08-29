@@ -726,3 +726,46 @@ h1 {
 .risk-red {
   border-left: 4px solid #d43f3f;
 }
+
+/* ---- Added: task timer ---- */
+.task-timer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.timer-hint {
+  font-size: 11px;
+  color: #9299a8;
+  flex-shrink: 0;
+}
+
+.timer-total {
+  font-size: 11px;
+  color: #9299a8;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-button {
+  border: 1px solid #dfe2e9;
+  border-radius: 7px;
+  background: white;
+  color: #3f4757;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-button:hover {
+  border-color: #c9c6ff;
+  color: #5148d8;
+}
+
+.timer-button.timer-running {
+  background: #feecec;
+  border-color: #f6c9c9;
+  color: #d43f3f;
+}

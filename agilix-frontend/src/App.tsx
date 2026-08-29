@@ -62,6 +62,134 @@ type SprintRisk = {
   completionForecastPercent: number;
 };
 
+function formatDuration(totalSeconds: number) {
+  const h = Math.floor(totalSeconds / 3600)
+    .toString()
+    .padStart(2, "0");
+  const m = Math.floor((totalSeconds % 3600) / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = Math.floor(totalSeconds % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+function TaskTimer({ task }: { task: Task }) {
+  const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
+  const [totalSeconds, setTotalSeconds] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    if (!task.assignee) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const [activeRes, totalRes] = await Promise.all([
+        fetch(
+          `${API_URL}/time-entries/task/${task._id}/active?user=${task.assignee._id}`
+        ),
+        fetch(`${API_URL}/time-entries/task/${task._id}/total`),
+      ]);
+
+      if (activeRes.ok) {
+        const active = await activeRes.json();
+        if (active) {
+          setActiveEntryId(active._id);
+          setElapsed(
+            Math.floor(
+              (Date.now() - new Date(active.startTime).getTime()) / 1000
+            )
+          );
+        } else {
+          setActiveEntryId(null);
+        }
+      }
+
+      if (totalRes.ok) {
+        const total = await totalRes.json();
+        setTotalSeconds(total.totalSeconds);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task._id]);
+
+  useEffect(() => {
+    if (!activeEntryId) return;
+
+    const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(interval);
+  }, [activeEntryId]);
+
+  const start = async () => {
+    if (!task.assignee) return;
+
+    const response = await fetch(`${API_URL}/time-entries/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        task: task._id,
+        project: task.project,
+        user: task.assignee._id,
+      }),
+    });
+
+    if (response.ok) {
+      const entry = await response.json();
+      setActiveEntryId(entry._id);
+      setElapsed(0);
+    } else {
+      const err = await response.json();
+      alert(err.message || "Failed to start timer");
+    }
+  };
+
+  const stop = async () => {
+    if (!activeEntryId) return;
+
+    const response = await fetch(
+      `${API_URL}/time-entries/${activeEntryId}/stop`,
+      { method: "PATCH" }
+    );
+
+    if (response.ok) {
+      setActiveEntryId(null);
+      await load();
+    }
+  };
+
+  if (loading) return null;
+
+  if (!task.assignee) {
+    return <span className="timer-hint">Assign someone to track time</span>;
+  }
+
+  return (
+    <div className="task-timer">
+      <span className="timer-total">Total: {formatDuration(totalSeconds)}</span>
+
+      {activeEntryId ? (
+        <button className="timer-button timer-running" onClick={stop}>
+          ⏹ {formatDuration(elapsed)}
+        </button>
+      ) : (
+        <button className="timer-button" onClick={start}>
+          ▶ Start Timer
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -938,6 +1066,8 @@ function BacklogPage() {
                   <span className="role-badge">{task.assignee.name}</span>
                 )}
               </div>
+
+              <TaskTimer task={task} />
             </div>
           ))}
         </div>
@@ -1197,6 +1327,8 @@ function SprintPage() {
                     {task.status.replace("_", " ")}
                   </span>
                 </div>
+
+                <TaskTimer task={task} />
               </div>
             ))}
 
