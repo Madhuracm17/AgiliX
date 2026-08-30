@@ -1,4 +1,4 @@
-import { IsArray, IsMongoId, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsIn, IsMongoId, IsOptional, IsString } from 'class-validator';
 
 export class CreateProjectDto {
   @IsString()
@@ -14,4 +14,8 @@ export class CreateProjectDto {
   @IsOptional()
   @IsArray()
   members?: string[];
+
+  @IsOptional()
+  @IsIn(['scrum', 'kanban'])
+  methodology?: 'scrum' | 'kanban';
 }

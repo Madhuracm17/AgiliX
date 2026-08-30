@@ -24,6 +24,7 @@ type Project = {
   description?: string;
   owner?: User;
   members?: User[];
+  methodology?: "scrum" | "kanban";
 };
 
 type Task = {
@@ -314,6 +315,7 @@ function ProjectsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [owner, setOwner] = useState("");
+  const [methodology, setMethodology] = useState<"scrum" | "kanban">("scrum");
 
   const navigate = useNavigate();
 
@@ -384,6 +386,7 @@ function ProjectsPage() {
           name,
           description,
           owner,
+          methodology,
         }),
       });
 
@@ -394,6 +397,7 @@ function ProjectsPage() {
 
       setName("");
       setDescription("");
+      setMethodology("scrum");
       setShowForm(false);
 
       await loadProjects();
@@ -449,6 +453,31 @@ function ProjectsPage() {
               </option>
             ))}
           </select>
+
+          <label>Methodology</label>
+          <div className="methodology-toggle">
+            <button
+              type="button"
+              className={`methodology-option ${
+                methodology === "scrum" ? "active" : ""
+              }`}
+              onClick={() => setMethodology("scrum")}
+            >
+              <strong>Scrum</strong>
+              <span>Sprints + backlog</span>
+            </button>
+
+            <button
+              type="button"
+              className={`methodology-option ${
+                methodology === "kanban" ? "active" : ""
+              }`}
+              onClick={() => setMethodology("kanban")}
+            >
+              <strong>Kanban</strong>
+              <span>Continuous workflow</span>
+            </button>
+          </div>
 
           <div className="form-actions">
             <button
@@ -800,6 +829,20 @@ function ProjectOverviewPage() {
           <span className="eyebrow">PROJECT STATUS</span>
           <h3>Active</h3>
           <p>Currently in development</p>
+        </div>
+
+        <div>
+          <span className="eyebrow">METHODOLOGY</span>
+          <h3>
+            {(project.methodology || "scrum") === "kanban"
+              ? "Kanban"
+              : "Scrum"}
+          </h3>
+          <p>
+            {(project.methodology || "scrum") === "kanban"
+              ? "Continuous workflow"
+              : "Sprints + backlog"}
+          </p>
         </div>
       </div>
 
