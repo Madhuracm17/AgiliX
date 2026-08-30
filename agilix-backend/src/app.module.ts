@@ -7,6 +7,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { SprintsModule } from './sprints/sprints.module';
 import { AiModule } from './ai/ai.module';
 import { TimeEntriesModule } from './time-entries/time-entries.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { TimeEntriesModule } from './time-entries/time-entries.module';
     SprintsModule,
     AiModule,
     TimeEntriesModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}
