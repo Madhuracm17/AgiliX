@@ -6,7 +6,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AppShell from "./components/layout/AppShell";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -62,6 +62,22 @@ type SprintRisk = {
   completionForecastPercent: number;
 };
 
+type MemberWorkload = {
+  user: { _id: string; name: string; email: string };
+  tasksTotal: number;
+  tasksCompleted: number;
+  tasksInProgress: number;
+  hoursWorked: number;
+  completionRate: number;
+};
+
+type ProjectSummary = {
+  totalTasks: number;
+  doneTasks: number;
+  completionRate: number;
+  totalHours: number;
+};
+
 function formatDuration(totalSeconds: number) {
   const h = Math.floor(totalSeconds / 3600)
     .toString()
@@ -75,17 +91,37 @@ function formatDuration(totalSeconds: number) {
   return `${h}:${m}:${s}`;
 }
 
+// How long the user can be idle before we auto-pause a running timer.
+const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
+
+// Browser events that count as "the user is active". We only ever check
+// THAT one of these fired, never read anything about the event itself
+// (no keys pressed, no cursor position, nothing is stored or sent anywhere).
+const ACTIVITY_EVENTS = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+
 function TaskTimer({ task }: { task: Task }) {
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [totalSeconds, setTotalSeconds] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [pausedByInactivity, setPausedByInactivity] = useState(false);
+
+  // A ref (not state) so updating it on every mouse move doesn't re-render.
+  const lastActivityRef = useRef(Date.now());
+
+  // Tracks which load() call is the most recent one, so that if two
+  // load() calls overlap (e.g. the page-load fetch and the fetch right
+  // after Pause), a slower/older response can never overwrite a newer,
+  // more correct one that already arrived.
+  const loadIdRef = useRef(0);
 
   const load = async () => {
     if (!task.assignee) {
       setLoading(false);
       return;
     }
+
+    const requestId = ++loadIdRef.current;
 
     try {
       const [activeRes, totalRes] = await Promise.all([
@@ -95,8 +131,13 @@ function TaskTimer({ task }: { task: Task }) {
         fetch(`${API_URL}/time-entries/task/${task._id}/total`),
       ]);
 
+      // A newer load() started while this one was still in flight —
+      // its result is stale, so don't let it touch the UI.
+      if (requestId !== loadIdRef.current) return;
+
       if (activeRes.ok) {
-        const active = await activeRes.json();
+        const activeText = await activeRes.text();
+        const active = activeText ? JSON.parse(activeText) : null;
         if (active) {
           setActiveEntryId(active._id);
           setElapsed(
@@ -110,11 +151,12 @@ function TaskTimer({ task }: { task: Task }) {
       }
 
       if (totalRes.ok) {
-        const total = await totalRes.json();
+        const totalText = await totalRes.text();
+        const total = totalText ? JSON.parse(totalText) : { totalSeconds: 0 };
         setTotalSeconds(total.totalSeconds);
       }
     } finally {
-      setLoading(false);
+      if (requestId === loadIdRef.current) setLoading(false);
     }
   };
 
@@ -123,11 +165,54 @@ function TaskTimer({ task }: { task: Task }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task._id]);
 
+  // Ticks the visible "elapsed" clock once a second while a timer is running.
   useEffect(() => {
     if (!activeEntryId) return;
 
     const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(interval);
+  }, [activeEntryId]);
+
+  // Inactivity watcher: only active while THIS task's timer is running.
+  // Reuses the same "stop" endpoint as a manual pause — we just remember
+  // afterwards that it was the inactivity watcher that closed it, so the
+  // UI can show the warning + Resume button instead of a plain Start button.
+  useEffect(() => {
+    if (!activeEntryId) return;
+
+    const markActive = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    ACTIVITY_EVENTS.forEach((event) =>
+      window.addEventListener(event, markActive)
+    );
+    lastActivityRef.current = Date.now();
+
+    const checkInterval = setInterval(async () => {
+      const idleFor = Date.now() - lastActivityRef.current;
+
+      if (idleFor >= INACTIVITY_LIMIT_MS) {
+        const response = await fetch(
+          `${API_URL}/time-entries/${activeEntryId}/stop`,
+          { method: "PATCH" }
+        );
+
+        if (response.ok) {
+          setActiveEntryId(null);
+          setPausedByInactivity(true);
+          await load();
+        }
+      }
+    }, 10000); // check every 10s — cheap, and 10s of slack on a 15-minute limit is fine
+
+    return () => {
+      ACTIVITY_EVENTS.forEach((event) =>
+        window.removeEventListener(event, markActive)
+      );
+      clearInterval(checkInterval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEntryId]);
 
   const start = async () => {
@@ -147,13 +232,15 @@ function TaskTimer({ task }: { task: Task }) {
       const entry = await response.json();
       setActiveEntryId(entry._id);
       setElapsed(0);
+      setPausedByInactivity(false);
     } else {
       const err = await response.json();
       alert(err.message || "Failed to start timer");
     }
   };
 
-  const stop = async () => {
+  // Manual "Pause" button — same stop endpoint the inactivity watcher uses.
+  const pause = async () => {
     if (!activeEntryId) return;
 
     const response = await fetch(
@@ -163,8 +250,17 @@ function TaskTimer({ task }: { task: Task }) {
 
     if (response.ok) {
       setActiveEntryId(null);
+      setPausedByInactivity(false);
       await load();
     }
+  };
+
+  // Resume after an inactivity pause is just a normal start — it opens a
+  // new time segment. The idle period itself was never saved, since we
+  // stopped the timer the moment inactivity was detected.
+  const resume = async () => {
+    setPausedByInactivity(false);
+    await start();
   };
 
   if (loading) return null;
@@ -173,13 +269,30 @@ function TaskTimer({ task }: { task: Task }) {
     return <span className="timer-hint">Assign someone to track time</span>;
   }
 
+  if (pausedByInactivity) {
+    return (
+      <div className="task-timer">
+        <span className="timer-total">
+          Total: {formatDuration(totalSeconds)}
+        </span>
+
+        <div className="timer-inactivity-warning">
+          <span>⚠️ Timer paused due to inactivity</span>
+          <button className="timer-button" onClick={resume}>
+            ▶ Resume Timer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="task-timer">
       <span className="timer-total">Total: {formatDuration(totalSeconds)}</span>
 
       {activeEntryId ? (
-        <button className="timer-button timer-running" onClick={stop}>
-          ⏹ {formatDuration(elapsed)}
+        <button className="timer-button timer-running" onClick={pause}>
+          ⏱ {formatDuration(elapsed)} ⏸ Pause
         </button>
       ) : (
         <button className="timer-button" onClick={start}>
@@ -1493,6 +1606,40 @@ function ReportsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
 
+  const [summary, setSummary] = useState<ProjectSummary | null>(null);
+  const [workload, setWorkload] = useState<MemberWorkload[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const load = async () => {
+      if (!projectId) return;
+
+      try {
+        setLoading(true);
+        setError("");
+
+        const [summaryRes, workloadRes] = await Promise.all([
+          fetch(`${API_URL}/analytics/summary/${projectId}`),
+          fetch(`${API_URL}/analytics/workload/${projectId}`),
+        ]);
+
+        if (!summaryRes.ok || !workloadRes.ok) {
+          throw new Error("Failed to load reports");
+        }
+
+        setSummary(await summaryRes.json());
+        setWorkload(await workloadRes.json());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Something went wrong");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [projectId]);
+
   return (
     <div>
       <div className="page-header">
@@ -1505,18 +1652,83 @@ function ReportsPage() {
           </p>
           <h1>Reports</h1>
           <p className="page-description">
-            Sprint velocity and project performance analytics.
+            Task completion and team workload for this project.
           </p>
         </div>
       </div>
 
-      <div className="empty-state">
-        <h2>Reports are coming soon</h2>
-        <p>
-          This will show sprint velocity, completion trends and team
-          workload once the reporting module is built.
-        </p>
-      </div>
+      {loading && (
+        <div className="empty-state">
+          <h2>Loading reports...</h2>
+        </div>
+      )}
+
+      {error && (
+        <div className="empty-state">
+          <h2>Unable to load reports</h2>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && summary && (
+        <div className="project-info-card">
+          <div>
+            <span className="eyebrow">TOTAL TASKS</span>
+            <h3>{summary.totalTasks}</h3>
+          </div>
+          <div>
+            <span className="eyebrow">COMPLETED</span>
+            <h3>{summary.doneTasks}</h3>
+          </div>
+          <div>
+            <span className="eyebrow">COMPLETION RATE</span>
+            <h3>{summary.completionRate}%</h3>
+          </div>
+          <div>
+            <span className="eyebrow">HOURS TRACKED</span>
+            <h3>{summary.totalHours}h</h3>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && workload.length === 0 && (
+        <div className="empty-state">
+          <h2>No team members on this project yet</h2>
+          <p>Add members to the project to see workload here.</p>
+        </div>
+      )}
+
+      {!loading && !error && workload.length > 0 && (
+        <div className="workload-list">
+          {workload.map((w) => (
+            <div className="workload-card" key={w.user._id}>
+              <div className="team-avatar">
+                {w.user.name.charAt(0).toUpperCase()}
+              </div>
+
+              <div className="workload-info">
+                <h2>{w.user.name}</h2>
+
+                <div className="workload-stats">
+                  <span>{w.tasksTotal} tasks</span>
+                  <span>{w.tasksInProgress} in progress</span>
+                  <span>{w.tasksCompleted} completed</span>
+                  <span>{w.hoursWorked}h tracked</span>
+                </div>
+
+                <div className="workload-bar">
+                  <div
+                    className="workload-bar-fill"
+                    style={{ width: `${w.completionRate}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="workload-rate">{w.completionRate}%</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

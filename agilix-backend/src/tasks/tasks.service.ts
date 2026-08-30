@@ -19,7 +19,10 @@ export class TasksService {
 
   // Backlog = tasks not yet pulled into a sprint
   findBacklog(projectId: string) {
-    return this.taskModel.find({ project: projectId, sprint: null }).exec();
+    return this.taskModel
+      .find({ project: projectId, sprint: null })
+      .populate('assignee', 'name email')
+      .exec();
   }
 
   findForSprint(sprintId: string) {
