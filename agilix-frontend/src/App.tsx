@@ -870,28 +870,53 @@ function ProjectOverviewPage() {
           </button>
         </div>
 
-        <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <div>
-              <span className="eyebrow">SPRINT</span>
-              <h2>Active Sprint</h2>
+        {(project.methodology || "scrum") === "kanban" ? (
+          <div className="dashboard-card">
+            <div className="dashboard-card-header">
+              <div>
+                <span className="eyebrow">KANBAN</span>
+                <h2>Board</h2>
+              </div>
+
+              <span className="dashboard-icon">🗂️</span>
             </div>
 
-            <span className="dashboard-icon">🏃</span>
+            <p>
+              Move tasks across Todo, In Progress and Done in a continuous
+              workflow — no sprints.
+            </p>
+
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/projects/${projectId}/kanban`)}
+            >
+              View Board
+            </button>
           </div>
+        ) : (
+          <div className="dashboard-card">
+            <div className="dashboard-card-header">
+              <div>
+                <span className="eyebrow">SPRINT</span>
+                <h2>Active Sprint</h2>
+              </div>
 
-          <p>
-            Plan your sprint, assign tasks and track progress toward your
-            sprint goal.
-          </p>
+              <span className="dashboard-icon">🏃</span>
+            </div>
 
-          <button
-            className="secondary-button"
-            onClick={() => navigate(`/projects/${projectId}/sprints`)}
-          >
-            View Sprint
-          </button>
-        </div>
+            <p>
+              Plan your sprint, assign tasks and track progress toward your
+              sprint goal.
+            </p>
+
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/projects/${projectId}/sprints`)}
+            >
+              View Sprint
+            </button>
+          </div>
+        )}
 
         <div className="dashboard-card">
           <div className="dashboard-card-header">
@@ -939,28 +964,30 @@ function ProjectOverviewPage() {
           </button>
         </div>
 
-        <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <div>
-              <span className="eyebrow">AI INSIGHTS</span>
-              <h2>Sprint Risk</h2>
+        {(project.methodology || "scrum") === "scrum" && (
+          <div className="dashboard-card">
+            <div className="dashboard-card-header">
+              <div>
+                <span className="eyebrow">AI INSIGHTS</span>
+                <h2>Sprint Risk</h2>
+              </div>
+
+              <span className="dashboard-icon">🤖</span>
             </div>
 
-            <span className="dashboard-icon">🤖</span>
+            <p>
+              Use AI to identify sprint risks and predict whether your team
+              can complete planned work.
+            </p>
+
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
+            >
+              View AI Insights
+            </button>
           </div>
-
-          <p>
-            Use AI to identify sprint risks and predict whether your team
-            can complete planned work.
-          </p>
-
-          <button
-            className="secondary-button"
-            onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
-          >
-            View AI Insights
-          </button>
-        </div>
+        )}
 
         <div className="dashboard-card">
           <div className="dashboard-card-header">
@@ -1645,6 +1672,277 @@ function AiInsightsPage() {
   );
 }
 
+function KanbanBoardPage() {
+  const { projectId } = useParams();
+  const navigate = useNavigate();
+
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState("medium");
+  const [assignee, setAssignee] = useState("");
+
+  const load = async () => {
+    if (!projectId) return;
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const [taskRes, userRes] = await Promise.all([
+        fetch(`${API_URL}/tasks?project=${projectId}`),
+        fetch(`${API_URL}/users`),
+      ]);
+
+      if (!taskRes.ok) {
+        throw new Error("Failed to load board");
+      }
+
+      setTasks(await taskRes.json());
+
+      if (userRes.ok) {
+        setUsers(await userRes.json());
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [projectId]);
+
+  const createTask = async () => {
+    if (!title.trim()) {
+      alert("Please enter a task title.");
+      return;
+    }
+
+    try {
+      setCreating(true);
+
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          project: projectId,
+          priority,
+          assignee: assignee || undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "Failed to create task");
+      }
+
+      setTitle("");
+      setDescription("");
+      setPriority("medium");
+      setAssignee("");
+      setShowForm(false);
+
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to create task");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const moveTask = async (taskId: string, status: Task["status"]) => {
+    // Optimistic update so the card jumps columns instantly, then
+    // reconcile with the server. Reload on failure to undo it.
+    setTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, status } : t))
+    );
+
+    const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+
+    if (!response.ok) {
+      alert("Failed to move task");
+      await load();
+    }
+  };
+
+  const columns: { key: Task["status"]; label: string }[] = [
+    { key: "todo", label: "Todo" },
+    { key: "in_progress", label: "In Progress" },
+    { key: "done", label: "Done" },
+  ];
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <p
+            className="eyebrow breadcrumb-link"
+            onClick={() => navigate(`/projects/${projectId}`)}
+          >
+            ← Back to project
+          </p>
+          <h1>Kanban Board</h1>
+          <p className="page-description">
+            Continuous workflow — move tasks across columns as work
+            progresses.
+          </p>
+        </div>
+
+        <button className="primary-button" onClick={() => setShowForm(true)}>
+          + Create Task
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="form-card">
+          <h2>Create Task</h2>
+
+          <label>Title</label>
+          <input
+            type="text"
+            placeholder="Task title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+
+          <label>Description</label>
+          <textarea
+            placeholder="Task description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+
+          <label>Priority</label>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+          >
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+
+          <label>Assignee</label>
+          <select
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value)}
+          >
+            <option value="">Unassigned</option>
+            {users.map((user) => (
+              <option key={user._id} value={user._id}>
+                {user.name}
+              </option>
+            ))}
+          </select>
+
+          <div className="form-actions">
+            <button
+              className="secondary-button"
+              onClick={() => setShowForm(false)}
+            >
+              Cancel
+            </button>
+
+            <button
+              className="primary-button"
+              onClick={createTask}
+              disabled={creating}
+            >
+              {creating ? "Creating..." : "Create Task"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading && (
+        <div className="empty-state">
+          <h2>Loading board...</h2>
+        </div>
+      )}
+
+      {error && (
+        <div className="empty-state">
+          <h2>Unable to load board</h2>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div className="kanban-board">
+          {columns.map((column) => {
+            const columnTasks = tasks.filter((t) => t.status === column.key);
+
+            return (
+              <div className="kanban-column" key={column.key}>
+                <div className="kanban-column-header">
+                  <span>{column.label}</span>
+                  <span className="kanban-column-count">
+                    {columnTasks.length}
+                  </span>
+                </div>
+
+                <div className="kanban-column-body">
+                  {columnTasks.length === 0 && (
+                    <p className="kanban-empty">No tasks here</p>
+                  )}
+
+                  {columnTasks.map((task) => (
+                    <div className="kanban-card" key={task._id}>
+                      <h3>{task.title}</h3>
+                      <p>{task.description || "No description"}</p>
+
+                      <div className="task-card-meta">
+                        <span
+                          className={`priority-badge priority-${task.priority}`}
+                        >
+                          {task.priority}
+                        </span>
+                        {task.assignee && (
+                          <span className="role-badge">
+                            {task.assignee.name}
+                          </span>
+                        )}
+                      </div>
+
+                      <TaskTimer task={task} />
+
+                      <select
+                        className="kanban-move-select"
+                        value={task.status}
+                        onChange={(e) =>
+                          moveTask(task._id, e.target.value as Task["status"])
+                        }
+                      >
+                        <option value="todo">Move to Todo</option>
+                        <option value="in_progress">Move to In Progress</option>
+                        <option value="done">Move to Done</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReportsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -1798,6 +2096,11 @@ function App() {
           <Route
             path="/projects/:projectId/sprints"
             element={<SprintPage />}
+          />
+
+          <Route
+            path="/projects/:projectId/kanban"
+            element={<KanbanBoardPage />}
           />
 
           <Route
