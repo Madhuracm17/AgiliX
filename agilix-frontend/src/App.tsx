@@ -1045,6 +1045,7 @@ function BacklogPage() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -1062,9 +1063,10 @@ function BacklogPage() {
       setLoading(true);
       setError("");
 
-      const [taskRes, userRes] = await Promise.all([
+      const [taskRes, userRes, sprintRes] = await Promise.all([
         fetch(`${API_URL}/tasks/backlog?project=${projectId}`),
         fetch(`${API_URL}/users`),
+        fetch(`${API_URL}/sprints?project=${projectId}`),
       ]);
 
       if (!taskRes.ok) {
@@ -1076,6 +1078,10 @@ function BacklogPage() {
       if (userRes.ok) {
         setUsers(await userRes.json());
       }
+
+      if (sprintRes.ok) {
+        setSprints(await sprintRes.json());
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -1086,6 +1092,22 @@ function BacklogPage() {
   useEffect(() => {
     load();
   }, [projectId]);
+
+  const addToSprint = async (taskId: string, sprintId: string) => {
+    if (!sprintId) return;
+
+    const response = await fetch(
+      `${API_URL}/tasks/${taskId}/sprint/${sprintId}`,
+      { method: "PATCH" }
+    );
+
+    if (response.ok) {
+      // Task leaves the backlog once it has a sprint, so just reload the list.
+      await load();
+    } else {
+      alert("Failed to add task to sprint");
+    }
+  };
 
   const createTask = async () => {
     if (!title.trim()) {
@@ -1250,6 +1272,21 @@ function BacklogPage() {
                 )}
               </div>
 
+              {sprints.length > 0 && (
+                <select
+                  className="kanban-move-select"
+                  value=""
+                  onChange={(e) => addToSprint(task._id, e.target.value)}
+                >
+                  <option value="">+ Add to sprint...</option>
+                  {sprints.map((sprint) => (
+                    <option key={sprint._id} value={sprint._id}>
+                      {sprint.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               <TaskTimer task={task} />
             </div>
           ))}
@@ -1328,6 +1365,27 @@ function SprintPage() {
       loadSprintDetails(selectedSprintId);
     }
   }, [selectedSprintId]);
+
+  const moveSprintTask = async (taskId: string, status: Task["status"]) => {
+    // Optimistic update for the board; stats (done/inProgress counts) are
+    // refetched afterwards since they depend on the server-side counts.
+    setSprintTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, status } : t))
+    );
+
+    const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+
+    if (response.ok && selectedSprintId) {
+      await loadSprintDetails(selectedSprintId);
+    } else if (!response.ok) {
+      alert("Failed to move task");
+      if (selectedSprintId) await loadSprintDetails(selectedSprintId);
+    }
+  };
 
   const createSprint = async () => {
     if (!name.trim() || !startDate || !endDate) {
@@ -1492,35 +1550,76 @@ function SprintPage() {
             </div>
           )}
 
-          <div className="task-list">
-            {sprintTasks.map((task) => (
-              <div className="task-card" key={task._id}>
-                <div>
-                  <h2>{task.title}</h2>
-                  <p>{task.description || "No description"}</p>
-                </div>
+          {sprintTasks.length === 0 ? (
+            <p className="page-description">
+              No tasks in this sprint yet. Add tasks from the backlog.
+            </p>
+          ) : (
+            <div className="kanban-board">
+              {(
+                [
+                  { key: "todo", label: "Todo" },
+                  { key: "in_progress", label: "In Progress" },
+                  { key: "done", label: "Done" },
+                ] as { key: Task["status"]; label: string }[]
+              ).map((column) => {
+                const columnTasks = sprintTasks.filter(
+                  (t) => t.status === column.key
+                );
 
-                <div className="task-card-meta">
-                  <span
-                    className={`priority-badge priority-${task.priority}`}
-                  >
-                    {task.priority}
-                  </span>
-                  <span className="status-badge">
-                    {task.status.replace("_", " ")}
-                  </span>
-                </div>
+                return (
+                  <div className="kanban-column" key={column.key}>
+                    <div className="kanban-column-header">
+                      <span>{column.label}</span>
+                      <span className="kanban-column-count">
+                        {columnTasks.length}
+                      </span>
+                    </div>
 
-                <TaskTimer task={task} />
-              </div>
-            ))}
+                    <div className="kanban-column-body">
+                      {columnTasks.length === 0 && (
+                        <p className="kanban-empty">No tasks here</p>
+                      )}
 
-            {sprintTasks.length === 0 && (
-              <p className="page-description">
-                No tasks in this sprint yet. Add tasks from the backlog.
-              </p>
-            )}
-          </div>
+                      {columnTasks.map((task) => (
+                        <div className="kanban-card" key={task._id}>
+                          <h3>{task.title}</h3>
+                          <p>{task.description || "No description"}</p>
+
+                          <div className="task-card-meta">
+                            <span
+                              className={`priority-badge priority-${task.priority}`}
+                            >
+                              {task.priority}
+                            </span>
+                          </div>
+
+                          <TaskTimer task={task} />
+
+                          <select
+                            className="kanban-move-select"
+                            value={task.status}
+                            onChange={(e) =>
+                              moveSprintTask(
+                                task._id,
+                                e.target.value as Task["status"]
+                              )
+                            }
+                          >
+                            <option value="todo">Move to Todo</option>
+                            <option value="in_progress">
+                              Move to In Progress
+                            </option>
+                            <option value="done">Move to Done</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
     </div>
