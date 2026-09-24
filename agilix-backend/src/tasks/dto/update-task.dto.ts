@@ -1,5 +1,6 @@
-import { IsEnum, IsMongoId, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsIn, IsMongoId, IsNumber, IsOptional, IsString } from 'class-validator';
 import { TaskPriority, TaskStatus } from '../schemas/task.schema';
+import { STORY_POINT_SCALE, STORY_POINT_SCALE_MESSAGE } from '../story-points';
 
 export class UpdateTaskDto {
   @IsOptional()
@@ -28,5 +29,6 @@ export class UpdateTaskDto {
 
   @IsOptional()
   @IsNumber()
+  @IsIn([...STORY_POINT_SCALE], { message: STORY_POINT_SCALE_MESSAGE })
   storyPoints?: number;
 }

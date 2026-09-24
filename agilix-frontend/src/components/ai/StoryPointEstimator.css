@@ -1,0 +1,134 @@
+.sp-estimator {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 340px;
+}
+
+.sp-estimate-button {
+  border: 1px solid #d9d6ff;
+  border-radius: 7px;
+  background: #f4f3ff;
+  color: #4b43d6;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sp-estimate-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sp-panel {
+  width: 100%;
+  border: 1px solid #d9d6ff;
+  border-left: 4px solid #635bff;
+  border-radius: 10px;
+  background: #fafaff;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sp-panel p {
+  margin: 0;
+  font-size: 12px;
+  color: #3f4757;
+}
+
+.sp-panel .sp-estimate {
+  font-size: 14px;
+  color: #172033;
+}
+
+.sp-panel .sp-estimate strong {
+  color: #4b43d6;
+  font-size: 16px;
+}
+
+.sp-reason span {
+  font-weight: 700;
+}
+
+.sp-panel .sp-saved {
+  color: #626a7a;
+}
+
+.sp-panel .sp-stale,
+.sp-panel .sp-override {
+  color: #9a6700;
+}
+
+.sp-select-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f4757;
+}
+
+.sp-select {
+  border: 1px solid #dfe2e9;
+  border-radius: 7px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  background: white;
+}
+
+.sp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.sp-actions .primary-button,
+.sp-actions .secondary-button {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.sp-error {
+  margin: 0;
+  font-size: 12px;
+  color: #b42318;
+}
+
+.sp-notice {
+  margin: 0;
+  font-size: 12px;
+  color: #067647;
+  font-weight: 600;
+}
+
+.sp-link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #635bff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sp-link-button:hover {
+  text-decoration: underline;
+}
+
+.sp-points-badge {
+  display: inline-block;
+  background: #f4f3ff;
+  color: #4b43d6;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}

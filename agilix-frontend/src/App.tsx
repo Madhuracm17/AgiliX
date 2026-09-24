@@ -8,6 +8,8 @@ import {
 } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import AppShell from "./components/layout/AppShell";
+import StoryPointEstimator from "./components/ai/StoryPointEstimator";
+import type { StoryPointValue } from "./api/ai";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
@@ -1055,6 +1057,8 @@ function BacklogPage() {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
   const [assignee, setAssignee] = useState("");
+  // Story points explicitly chosen via the AI estimator; null = not set (saved as 0).
+  const [storyPoints, setStoryPoints] = useState<StoryPointValue | null>(null);
 
   const load = async () => {
     if (!projectId) return;
@@ -1109,6 +1113,25 @@ function BacklogPage() {
     }
   };
 
+  // Saves story points on an existing task. Called only from the explicit
+  // "Apply Estimate" button — requesting an AI estimate never reaches here.
+  const applyStoryPoints = async (taskId: string, points: StoryPointValue) => {
+    const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storyPoints: points }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    // Update just this field locally (a full reload would unmount the card).
+    setTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, storyPoints: points } : t))
+    );
+  };
+
   const createTask = async () => {
     if (!title.trim()) {
       alert("Please enter a task title.");
@@ -1127,6 +1150,7 @@ function BacklogPage() {
           project: projectId,
           priority,
           assignee: assignee || undefined,
+          storyPoints: storyPoints ?? undefined,
         }),
       });
 
@@ -1139,6 +1163,7 @@ function BacklogPage() {
       setDescription("");
       setPriority("medium");
       setAssignee("");
+      setStoryPoints(null);
       setShowForm(false);
 
       await load();
@@ -1212,6 +1237,36 @@ function BacklogPage() {
             ))}
           </select>
 
+          <label>Story Points</label>
+          <p className="page-description">
+            {storyPoints === null ? (
+              "Not set — use the AI estimate below (saved as 0 if left empty)."
+            ) : (
+              <>
+                Selected: <strong>{storyPoints} pts</strong> (saved when you
+                create the task){" "}
+                <button
+                  type="button"
+                  className="sp-link-button"
+                  onClick={() => setStoryPoints(null)}
+                >
+                  Clear
+                </button>
+              </>
+            )}
+          </p>
+
+          {projectId && (
+            <StoryPointEstimator
+              projectId={projectId}
+              title={title}
+              description={description}
+              priority={priority as Task["priority"]}
+              applyLabel="Use Estimate"
+              onApply={(points) => setStoryPoints(points)}
+            />
+          )}
+
           <div className="form-actions">
             <button
               className="secondary-button"
@@ -1270,7 +1325,26 @@ function BacklogPage() {
                 {task.assignee && (
                   <span className="role-badge">{task.assignee.name}</span>
                 )}
+                {(task.storyPoints ?? 0) > 0 && (
+                  <span className="sp-points-badge">
+                    Saved: {task.storyPoints} pts
+                  </span>
+                )}
               </div>
+
+              {projectId && (
+                <StoryPointEstimator
+                  projectId={projectId}
+                  taskId={task._id}
+                  title={task.title}
+                  description={task.description}
+                  priority={task.priority}
+                  savedStoryPoints={task.storyPoints ?? 0}
+                  applyLabel="Apply Estimate"
+                  appliedText={(points) => `Saved ${points} story points.`}
+                  onApply={(points) => applyStoryPoints(task._id, points)}
+                />
+              )}
 
               {sprints.length > 0 && (
                 <select
