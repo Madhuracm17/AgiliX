@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import AppShell from "./components/layout/AppShell";
 import StoryPointEstimator from "./components/ai/StoryPointEstimator";
+import PriorityRecommender from "./components/ai/PriorityRecommender";
 import type { StoryPointValue } from "./api/ai";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -1132,6 +1133,25 @@ function BacklogPage() {
     );
   };
 
+  // Saves the priority on an existing task. Called only from the explicit
+  // "Apply Recommendation" button — requesting a recommendation never reaches here.
+  const applyPriority = async (taskId: string, value: Task["priority"]) => {
+    const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ priority: value }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    // Update just this field locally (a full reload would unmount the card).
+    setTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, priority: value } : t))
+    );
+  };
+
   const createTask = async () => {
     if (!title.trim()) {
       alert("Please enter a task title.");
@@ -1223,6 +1243,17 @@ function BacklogPage() {
             <option value="medium">Medium</option>
             <option value="high">High</option>
           </select>
+
+          {projectId && (
+            <PriorityRecommender
+              projectId={projectId}
+              title={title}
+              description={description}
+              currentPriority={priority as Task["priority"]}
+              applyLabel="Use Recommendation"
+              onApply={(value) => setPriority(value)}
+            />
+          )}
 
           <label>Assignee</label>
           <select
@@ -1331,6 +1362,19 @@ function BacklogPage() {
                   </span>
                 )}
               </div>
+
+              {projectId && (
+                <PriorityRecommender
+                  projectId={projectId}
+                  taskId={task._id}
+                  title={task.title}
+                  description={task.description}
+                  currentPriority={task.priority}
+                  applyLabel="Apply Recommendation"
+                  appliedText={(value) => `Priority set to ${value}.`}
+                  onApply={(value) => applyPriority(task._id, value)}
+                />
+              )}
 
               {projectId && (
                 <StoryPointEstimator

@@ -41,3 +41,26 @@ export function estimateStoryPoints(data: StoryPointEstimateRequest) {
     body: JSON.stringify(data),
   });
 }
+
+// ---- AI Priority Recommendation ----
+
+export interface PriorityRecommendationRequest {
+  title: string;
+  description?: string;
+  project: string;
+  /** Set when recommending for an existing task. Its current priority is never sent. */
+  taskId?: string;
+}
+
+export interface PriorityRecommendation {
+  priority: TaskPriority;
+  reasoning: string;
+}
+
+/** Returns an AI recommendation only — it never modifies a task. */
+export function recommendPriority(data: PriorityRecommendationRequest) {
+  return api<PriorityRecommendation>("/ai/priority", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
