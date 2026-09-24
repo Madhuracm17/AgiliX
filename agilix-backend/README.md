@@ -52,3 +52,89 @@ toy classifier would be at this scale.
   `/tasks/sprint/:sprintId/stats`)
 - Auth/JWT (currently password is hashed but there's no login/session yet)
 - AWS deployment
+
+## MCP Server (Model Context Protocol)
+
+AgiliX includes an MCP server so AI agents (MCP Inspector, Claude Desktop, …) can
+talk to AgiliX through tools. It is a **separate process** that uses the **stdio**
+transport:
+
+- It starts the existing `AppModule` with `NestFactory.createApplicationContext()`
+  — the same config, MongoDB connection setup and services as the API, but **no
+  HTTP server** and no extra port.
+- **stdout carries only MCP protocol messages.** All logs go to **stderr**.
+- It uses the existing `.env` (no extra environment variables) and loads it from
+  `agilix-backend/` even when an MCP client starts it from another folder.
+- It is **read-only**: tools that change data are refused while
+  `MCP_WRITE_TOOLS_ENABLED` is `false` (`src/mcp/mcp-server.constants.ts`),
+  because AgiliX has no authentication yet.
+
+### Run and test
+
+```bash
+npm run build        # compiles the API and the MCP server (dist/mcp/mcp-main.js)
+npm run mcp:test     # automated smoke test (needs MongoDB running and .env configured)
+npm run mcp:inspect  # opens MCP Inspector in the browser to try the tools by hand
+npm run mcp          # starts the server on stdio (normally started BY an MCP client)
+```
+
+`npm run mcp` waits silently for MCP messages on stdin; stop it with `Ctrl+C`.
+Rebuild (`npm run build`) after every change — the MCP server runs from `dist/`.
+
+### Built-in tool
+
+| Tool | Type | Purpose |
+|---|---|---|
+| `agilix_server_info` | read-only | Health check: server name/version, NestJS context status, MongoDB connection state |
+
+### Connect from Claude Desktop (Windows example)
+
+Add to `%APPDATA%\Claude\claude_desktop_config.json` (use your real path and
+double backslashes), then restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "agilix": {
+      "command": "node",
+      "args": ["C:\\path\\to\\AgiliX\\agilix-backend\\dist\\mcp\\mcp-main.js"]
+    }
+  }
+}
+```
+
+### Adding a tool (for the MCP tools owner)
+
+1. Create `src/mcp/tools/<name>.tool.ts`:
+
+```ts
+   import { z } from 'zod';
+   import { ProjectsService } from '../../projects/projects.service';
+   import { defineMcpTool } from '../mcp-tool.types';
+
+   export const getProjectTool = defineMcpTool({
+     name: 'get_project',
+     title: 'Get project',
+     description: 'Returns one AgiliX project by id.',
+     inputSchema: { projectId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid project id') },
+     readOnly: true,
+     handler: ({ projectId }, ctx) => ctx.get(ProjectsService).findOne(projectId),
+   });
+```
+
+2. Add it to `MCP_TOOLS` in `src/mcp/tools/index.ts`.
+3. `npm run build`, then `npm run mcp:test` / `npm run mcp:inspect`.
+
+Rules:
+
+- Call existing services through `ctx.get(SomeService)` — never duplicate business logic.
+- Return plain data; throw normal Nest exceptions (`NotFoundException`, …). The
+  factory converts results and errors to MCP responses.
+- Validate input with the zod `inputSchema`. To reuse an existing DTO's rules, call
+  `validateDto(SomeDto, args)` from `src/mcp/mcp-validation.ts` (the HTTP
+  `ValidationPipe` does not run in the MCP process).
+- Never write to stdout (use Nest `Logger`); stdout belongs to the MCP protocol.
+- Only `readOnly: true` tools are allowed until the team explicitly enables write tools.
+
+Files you normally do **not** need to change: `mcp-main.ts`, `mcp-process-setup.ts`,
+`mcp-server.factory.ts`, `mcp-results.ts`, `mcp-validation.ts`, `stderr-logger.ts`.
