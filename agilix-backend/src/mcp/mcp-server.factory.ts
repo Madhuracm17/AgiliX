@@ -5,7 +5,7 @@ import {
   AGILIX_MCP_SERVER_INFO,
   MCP_WRITE_TOOLS_ENABLED,
 } from './mcp-server.constants';
-import { toToolResult } from './mcp-results';
+import { toToolError, toToolResult } from './mcp-results';
 import type {
   AnyMcpToolDefinition,
   McpToolContext,
@@ -114,18 +114,13 @@ export function createAgilixMcpServer(
             error instanceof Error ? error.stack : String(error),
           );
 
-          return toToolResult({
-            isError: true,
-            content: [
-              {
-                type: 'text',
-                text:
-                  error instanceof Error
-                    ? error.message
-                    : String(error),
-              },
-            ],
-          });
+          /*
+           * Report the failure to the MCP client as a real tool error
+           * (isError: true) with a safe message, e.g.
+           * "Error 404: Project not found". Full details stay in the
+           * server log (stderr) only.
+           */
+          return toToolError(error);
         }
       },
     );
