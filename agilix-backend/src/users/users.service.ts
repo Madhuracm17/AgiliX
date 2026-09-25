@@ -1,16 +1,19 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import * as crypto from 'crypto';
+import * as bcrypt from 'bcryptjs';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
+
+/** bcrypt cost factor — 10 is the widely used default (salted, ~100 ms per hash). */
+const BCRYPT_ROUNDS = 10;
 
 @Injectable()
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
-  private hash(password: string): string {
-    return crypto.createHash('sha256').update(password).digest('hex');
+  private hash(password: string): Promise<string> {
+    return bcrypt.hash(password, BCRYPT_ROUNDS);
   }
 
   async create(dto: CreateUserDto): Promise<User> {
@@ -19,9 +22,10 @@ export class UsersService {
     const created = new this.userModel({
       name: dto.name,
       email: dto.email,
-      passwordHash: this.hash(dto.password),
+      passwordHash: await this.hash(dto.password),
       role: dto.role,
     });
+    // The schema's toJSON transform removes passwordHash from the API response.
     return created.save();
   }
 
