@@ -8,6 +8,7 @@ import { SprintsModule } from './sprints/sprints.module';
 import { AiModule } from './ai/ai.module';
 import { TimeEntriesModule } from './time-entries/time-entries.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     AiModule,
     TimeEntriesModule,
     AnalyticsModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

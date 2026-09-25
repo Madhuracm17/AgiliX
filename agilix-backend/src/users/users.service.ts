@@ -33,6 +33,21 @@ export class UsersService {
     return this.userModel.find().select('-passwordHash').exec();
   }
 
+  /**
+   * Login only: the one query that loads passwordHash (hidden everywhere else).
+   * Never return this document from an API route.
+   */
+  async findByEmailWithPassword(email: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ email }).select('+passwordHash').exec();
+  }
+
+  /** Saves a new bcrypt hash for the user (used to upgrade old SHA-256 passwords on login). */
+  async setPassword(id: string, password: string): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: id }, { passwordHash: await this.hash(password) })
+      .exec();
+  }
+
   async findOne(id: string): Promise<User> {
     const user = await this.userModel.findById(id).select('-passwordHash');
     if (!user) throw new NotFoundException('User not found');
