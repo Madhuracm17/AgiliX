@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { initialOf, useAuth } from "../../auth/auth-context";
 
 const links = [
   { label: "Projects", path: "/projects" },
@@ -6,6 +7,8 @@ const links = [
 ];
 
 export default function Sidebar() {
+  const { user, logout } = useAuth();
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -30,11 +33,14 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="avatar">M</div>
-        <div>
-          <strong>AgiliX User</strong>
-          <span>Workspace</span>
+        <div className="avatar">{initialOf(user.name)}</div>
+        <div className="sidebar-user">
+          <strong title={user.email}>{user.name}</strong>
+          <span>{user.role}</span>
         </div>
+        <button type="button" className="sidebar-logout" onClick={logout}>
+          Log out
+        </button>
       </div>
     </aside>
   );
