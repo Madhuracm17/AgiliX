@@ -4,9 +4,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '../users/schemas/user.schema';
 import { AuthUser, JWT_ALGORITHM, JwtConfig, JwtPayload } from './jwt-config';
+import { IS_PUBLIC_KEY } from './public.decorator';
 
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 const ROLES = new Set<string>(Object.values(UserRole));
@@ -18,20 +20,27 @@ interface AuthRequest {
 }
 
 /**
- * Allows a request only if it carries a valid login token:
+ * Global guard (registered in AuthModule): every HTTP route requires a valid token
  *   Authorization: Bearer <token>
- * On success, the logged-in user is available as request.user (see @CurrentUser()).
+ * except routes marked @Public().
  *
- * Step 3a: used only on GET /auth/me. Nothing else is locked yet.
+ * On success, the logged-in user is available as request.user (see @CurrentUser()).
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly jwtConfig: JwtConfig,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const request = context.switchToHttp().getRequest<AuthRequest>();
     const token = readBearerToken(request.headers.authorization);
     if (!token) throw new UnauthorizedException('Please log in first');
