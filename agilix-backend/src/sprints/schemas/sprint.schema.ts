@@ -17,14 +17,36 @@ export class Sprint {
   @Prop({ type: Types.ObjectId, ref: 'Project', required: true })
   project: Types.ObjectId;
 
+  // What the team wants to achieve in this sprint (optional).
+  @Prop({ default: '' })
+  goal: string;
+
   @Prop({ required: true })
   startDate: Date;
 
   @Prop({ required: true })
   endDate: Date;
 
+  // planned → active (Start Sprint) → completed (Complete Sprint).
+  // Only one sprint per project can be active at a time.
   @Prop({ enum: SprintStatus, default: SprintStatus.PLANNED })
   status: SprintStatus;
+
+  // When the sprint was actually started / completed (null until then).
+  // Used later for velocity and burndown.
+  @Prop({ type: Date, default: null })
+  startedAt: Date | null;
+
+  @Prop({ type: Date, default: null })
+  completedAt: Date | null;
+
+  // Snapshot taken when the sprint is completed, before unfinished tasks
+  // go back to the backlog, so the sprint's history is not lost.
+  @Prop({ type: Number, default: null })
+  committedStoryPoints: number | null;
+
+  @Prop({ type: Number, default: null })
+  completedStoryPoints: number | null;
 
   // Points/day the team has historically completed, used as an input
   // to the AI sprint-risk prediction (see ai/ai.service.ts)

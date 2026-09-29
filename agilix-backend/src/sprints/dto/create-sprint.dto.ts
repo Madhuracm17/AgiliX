@@ -1,4 +1,4 @@
-import { IsDateString, IsMongoId, IsString } from 'class-validator';
+import { IsDateString, IsMongoId, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateSprintDto {
   @IsString()
@@ -7,9 +7,15 @@ export class CreateSprintDto {
   @IsMongoId()
   project: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  goal?: string;
+
   @IsDateString()
   startDate: string;
 
+  // Must be on or after startDate (checked in SprintsService).
   @IsDateString()
   endDate: string;
 }
