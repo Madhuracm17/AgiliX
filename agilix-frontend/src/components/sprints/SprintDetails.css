@@ -1,0 +1,161 @@
+/* ---- Sprint status badge (tabs and details bar) ---- */
+
+.sprint-status-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.sprint-status-planned {
+  background: #f3f4f8;
+  color: #626a7a;
+}
+
+.sprint-status-active {
+  background: #e3f7ea;
+  color: #1f8a4c;
+}
+
+.sprint-status-completed {
+  background: #eeedff;
+  color: #5148d8;
+}
+
+/* ---- Details bar for the selected sprint ---- */
+
+.sprint-details {
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.sprint-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.sprint-details-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.sprint-details-title {
+  display: flex;
+  align-items: center;
+}
+
+.sprint-details-title h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sprint-details-dates {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #626a7a;
+}
+
+.sprint-details-goal {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #3f4757;
+  overflow-wrap: anywhere;
+}
+
+.sprint-details-muted {
+  color: #9299a8;
+}
+
+.sprint-details-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sprint-details-actions button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.sprint-details-error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff1f1;
+  color: #c53030;
+  font-size: 13px;
+}
+
+.sprint-details-notice {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #1f8a4c;
+}
+
+/* ---- Edit form ---- */
+
+.sprint-edit-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e7e9ef;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sprint-edit-form label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3f4757;
+  margin-top: 6px;
+}
+
+.sprint-edit-form input,
+.sprint-edit-form textarea {
+  width: 100%;
+  border: 1px solid #dfe2e9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.sprint-edit-form input:focus,
+.sprint-edit-form textarea:focus {
+  border-color: #635bff;
+}
+
+.sprint-edit-form textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+
+.sprint-edit-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sprint-edit-dates > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@media (max-width: 600px) {
+  .sprint-edit-dates {
+    grid-template-columns: 1fr;
+  }
+}

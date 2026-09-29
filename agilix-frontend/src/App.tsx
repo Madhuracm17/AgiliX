@@ -10,6 +10,8 @@ import { useEffect, useRef, useState } from "react";
 import AppShell from "./components/layout/AppShell";
 import StoryPointEstimator from "./components/ai/StoryPointEstimator";
 import PriorityRecommender from "./components/ai/PriorityRecommender";
+import SprintDetails from "./components/sprints/SprintDetails";
+import SprintStatusBadge from "./components/sprints/SprintStatusBadge";
 import type { StoryPointValue } from "./api/ai";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -46,6 +48,7 @@ type Sprint = {
   _id: string;
   name: string;
   project: string;
+  goal?: string;
   startDate: string;
   endDate: string;
   status: string;
@@ -1425,6 +1428,7 @@ function SprintPage() {
   const [creating, setCreating] = useState(false);
 
   const [name, setName] = useState("");
+  const [goal, setGoal] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -1447,12 +1451,16 @@ function SprintPage() {
         throw new Error("Failed to load sprints");
       }
 
-      const data = await response.json();
+      const data: Sprint[] = await response.json();
       setSprints(data);
 
-      if (data.length > 0) {
-        setSelectedSprintId(data[0]._id);
-      }
+      // Keep the selected tab after a reload; otherwise open the active sprint
+      // (or the first one).
+      setSelectedSprintId((current) => {
+        if (current && data.some((s) => s._id === current)) return current;
+        const active = data.find((s) => s.status === "active");
+        return active?._id ?? data[0]?._id ?? null;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -1484,6 +1492,9 @@ function SprintPage() {
     }
   }, [selectedSprintId]);
 
+  const selectedSprint =
+    sprints.find((sprint) => sprint._id === selectedSprintId) ?? null;
+
   const moveSprintTask = async (taskId: string, status: Task["status"]) => {
     // Optimistic update for the board; stats (done/inProgress counts) are
     // refetched afterwards since they depend on the server-side counts.
@@ -1507,7 +1518,12 @@ function SprintPage() {
 
   const createSprint = async () => {
     if (!name.trim() || !startDate || !endDate) {
-      alert("Please fill all fields.");
+      alert("Please fill in the name, start date and end date.");
+      return;
+    }
+
+    if (endDate < startDate) {
+      alert("End date must be on or after the start date.");
       return;
     }
 
@@ -1518,8 +1534,9 @@ function SprintPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
+          name: name.trim(),
           project: projectId,
+          goal: goal.trim(),
           startDate,
           endDate,
         }),
@@ -1527,15 +1544,22 @@ function SprintPage() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.message || "Failed to create sprint");
+        const message = Array.isArray(data.message)
+          ? data.message.join(", ")
+          : data.message;
+        throw new Error(message || "Failed to create sprint");
       }
 
+      const created: Sprint = await response.json();
+
       setName("");
+      setGoal("");
       setStartDate("");
       setEndDate("");
       setShowForm(false);
 
       await loadSprints();
+      setSelectedSprintId(created._id);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to create sprint");
     } finally {
@@ -1576,6 +1600,14 @@ function SprintPage() {
             onChange={(e) => setName(e.target.value)}
           />
 
+          <label>Sprint goal (optional)</label>
+          <textarea
+            placeholder="What should this sprint achieve?"
+            value={goal}
+            maxLength={500}
+            onChange={(e) => setGoal(e.target.value)}
+          />
+
           <label>Start date</label>
           <input
             type="date"
@@ -1587,6 +1619,7 @@ function SprintPage() {
           <input
             type="date"
             value={endDate}
+            min={startDate || undefined}
             onChange={(e) => setEndDate(e.target.value)}
           />
 
@@ -1641,9 +1674,22 @@ function SprintPage() {
                 onClick={() => setSelectedSprintId(sprint._id)}
               >
                 {sprint.name}
+                <SprintStatusBadge status={sprint.status} />
               </button>
             ))}
           </div>
+
+          {selectedSprint && (
+            <SprintDetails
+              key={selectedSprint._id}
+              sprint={selectedSprint}
+              unfinishedCount={stats ? stats.total - stats.done : 0}
+              onChanged={async () => {
+                await loadSprints();
+                await loadSprintDetails(selectedSprint._id);
+              }}
+            />
+          )}
 
           {stats && (
             <div className="project-info-card">
