@@ -159,3 +159,122 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Sprint progress bar ---- */
+
+.sprint-progress {
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 14px;
+  padding: 14px 20px;
+  margin-bottom: 20px;
+}
+
+.sprint-progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #626a7a;
+  margin-bottom: 8px;
+}
+
+.sprint-progress-label strong {
+  color: #172033;
+}
+
+.sprint-progress-track {
+  display: flex;
+  height: 10px;
+  background: #eef0f5;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.sprint-progress-fill {
+  height: 100%;
+  background: #635bff;
+  transition: width 0.3s ease;
+}
+
+.sprint-progress-fill-in-progress {
+  height: 100%;
+  background: #c9c6ff;
+  transition: width 0.3s ease;
+}
+
+.sprint-progress-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #626a7a;
+}
+
+.sprint-progress-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sprint-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sprint-legend-done {
+  background: #635bff;
+}
+
+.sprint-legend-in-progress {
+  background: #c9c6ff;
+}
+
+/* ---- Sprint board cards ---- */
+
+.sprint-card-points {
+  display: inline-block;
+  background: #f4f3ff;
+  color: #4b43d6;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.sprint-card-unassigned {
+  display: inline-block;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #9299a8;
+  background: #f6f7fb;
+}
+
+.sprint-card-backlog-button {
+  width: 100%;
+  margin-top: 8px;
+  border: 1px dashed #dfe2e9;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #626a7a;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sprint-card-backlog-button:hover:not(:disabled) {
+  border-color: #c9c6ff;
+  color: #5148d8;
+}
+
+.sprint-card-backlog-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

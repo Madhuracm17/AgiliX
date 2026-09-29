@@ -12,6 +12,7 @@ import StoryPointEstimator from "./components/ai/StoryPointEstimator";
 import PriorityRecommender from "./components/ai/PriorityRecommender";
 import SprintDetails from "./components/sprints/SprintDetails";
 import SprintStatusBadge from "./components/sprints/SprintStatusBadge";
+import SprintProgress from "./components/sprints/SprintProgress";
 import type { StoryPointValue } from "./api/ai";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -1101,6 +1102,9 @@ function BacklogPage() {
     load();
   }, [projectId]);
 
+  // Tasks can only be added to sprints that are not completed yet.
+  const openSprints = sprints.filter((sprint) => sprint.status !== "completed");
+
   const addToSprint = async (taskId: string, sprintId: string) => {
     if (!sprintId) return;
 
@@ -1113,7 +1117,8 @@ function BacklogPage() {
       // Task leaves the backlog once it has a sprint, so just reload the list.
       await load();
     } else {
-      alert("Failed to add task to sprint");
+      const data = await response.json().catch(() => null);
+      alert(data?.message || "Failed to add task to sprint");
     }
   };
 
@@ -1393,16 +1398,17 @@ function BacklogPage() {
                 />
               )}
 
-              {sprints.length > 0 && (
+              {openSprints.length > 0 && (
                 <select
                   className="kanban-move-select"
                   value=""
                   onChange={(e) => addToSprint(task._id, e.target.value)}
                 >
                   <option value="">+ Add to sprint...</option>
-                  {sprints.map((sprint) => (
+                  {openSprints.map((sprint) => (
                     <option key={sprint._id} value={sprint._id}>
                       {sprint.name}
+                      {sprint.status === "active" ? " (active)" : ""}
                     </option>
                   ))}
                 </select>
@@ -1494,6 +1500,37 @@ function SprintPage() {
 
   const selectedSprint =
     sprints.find((sprint) => sprint._id === selectedSprintId) ?? null;
+  // Completed sprints are a record: their board can no longer be changed.
+  const sprintIsLocked = selectedSprint?.status === "completed";
+
+  const [movingToBacklogId, setMovingToBacklogId] = useState<string | null>(
+    null
+  );
+
+  // Takes a task out of the sprint and puts it back in the backlog.
+  const moveToBacklog = async (task: Task) => {
+    if (!selectedSprintId) return;
+
+    try {
+      setMovingToBacklogId(task._id);
+
+      const response = await fetch(`${API_URL}/tasks/${task._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sprint: null }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to move the task back to the backlog");
+      }
+
+      await loadSprintDetails(selectedSprintId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setMovingToBacklogId(null);
+    }
+  };
 
   const moveSprintTask = async (taskId: string, status: Task["status"]) => {
     // Optimistic update for the board; stats (done/inProgress counts) are
@@ -1714,6 +1751,19 @@ function SprintPage() {
             </div>
           )}
 
+          {stats && stats.total > 0 && (
+            <SprintProgress
+              totalTasks={stats.total}
+              doneTasks={stats.done}
+              inProgressTasks={stats.inProgress}
+              totalStoryPoints={stats.totalStoryPoints}
+              completedStoryPoints={stats.completedStoryPoints}
+              inProgressStoryPoints={sprintTasks
+                .filter((t) => t.status === "in_progress")
+                .reduce((sum, t) => sum + (t.storyPoints ?? 0), 0)}
+            />
+          )}
+
           {sprintTasks.length === 0 ? (
             <p className="page-description">
               No tasks in this sprint yet. Add tasks from the backlog.
@@ -1756,26 +1806,57 @@ function SprintPage() {
                             >
                               {task.priority}
                             </span>
+                            {(task.storyPoints ?? 0) > 0 && (
+                              <span className="sprint-card-points">
+                                {task.storyPoints} pts
+                              </span>
+                            )}
+                            {task.assignee ? (
+                              <span className="role-badge">
+                                {task.assignee.name}
+                              </span>
+                            ) : (
+                              <span className="sprint-card-unassigned">
+                                Unassigned
+                              </span>
+                            )}
                           </div>
 
                           <TaskTimer task={task} />
 
-                          <select
-                            className="kanban-move-select"
-                            value={task.status}
-                            onChange={(e) =>
-                              moveSprintTask(
-                                task._id,
-                                e.target.value as Task["status"]
-                              )
-                            }
-                          >
-                            <option value="todo">Move to Todo</option>
-                            <option value="in_progress">
-                              Move to In Progress
-                            </option>
-                            <option value="done">Move to Done</option>
-                          </select>
+                          {!sprintIsLocked && (
+                            <>
+                              <select
+                                className="kanban-move-select"
+                                value={task.status}
+                                onChange={(e) =>
+                                  moveSprintTask(
+                                    task._id,
+                                    e.target.value as Task["status"]
+                                  )
+                                }
+                              >
+                                <option value="todo">Move to Todo</option>
+                                <option value="in_progress">
+                                  Move to In Progress
+                                </option>
+                                <option value="done">Move to Done</option>
+                              </select>
+
+                              {task.status !== "done" && (
+                                <button
+                                  type="button"
+                                  className="sprint-card-backlog-button"
+                                  onClick={() => moveToBacklog(task)}
+                                  disabled={movingToBacklogId === task._id}
+                                >
+                                  {movingToBacklogId === task._id
+                                    ? "Moving…"
+                                    : "↩ Move back to backlog"}
+                                </button>
+                              )}
+                            </>
+                          )}
                         </div>
                       ))}
                     </div>
