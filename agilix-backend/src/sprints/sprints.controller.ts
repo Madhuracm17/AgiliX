@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { SprintsService } from './sprints.service';
 import { CreateSprintDto } from './dto/create-sprint.dto';
 import { UpdateSprintDto } from './dto/update-sprint.dto';
+import { CompleteSprintDto } from './dto/complete-sprint.dto';
 
 @Controller('sprints')
 export class SprintsController {
@@ -34,9 +35,12 @@ export class SprintsController {
     return this.sprintsService.start(id);
   }
 
-  /** active → completed; unfinished tasks go back to the backlog. */
+  /**
+   * active → completed. Unfinished tasks go to the planned sprint given in
+   * { moveUnfinishedTo }, or back to the backlog when it is left out.
+   */
   @Patch(':id/complete')
-  complete(@Param('id') id: string) {
-    return this.sprintsService.complete(id);
+  complete(@Param('id') id: string, @Body() dto: CompleteSprintDto) {
+    return this.sprintsService.complete(id, dto);
   }
 }
