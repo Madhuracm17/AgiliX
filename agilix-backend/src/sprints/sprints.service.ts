@@ -9,14 +9,17 @@ import { Model } from 'mongoose';
 import { Sprint, SprintDocument, SprintStatus } from './schemas/sprint.schema';
 import { CreateSprintDto } from './dto/create-sprint.dto';
 import { UpdateSprintDto } from './dto/update-sprint.dto';
+import { CompleteSprintDto } from './dto/complete-sprint.dto';
 import { Task, TaskDocument, TaskStatus } from '../tasks/schemas/task.schema';
 
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 
 export interface CompleteSprintResult {
   sprint: SprintDocument;
-  /** How many unfinished tasks were moved back to the backlog. */
-  movedToBacklog: number;
+  /** How many unfinished tasks were moved. */
+  movedCount: number;
+  /** The sprint they were moved to, or null when they went back to the backlog. */
+  movedToSprint: { _id: string; name: string } | null;
 }
 
 @Injectable()
@@ -89,9 +92,10 @@ export class SprintsService {
 
   /**
    * active → completed. Records the committed/completed story points, then moves
-   * every task that is not done back to the backlog so no work is lost.
+   * every task that is not done either to a chosen planned sprint or back to the
+   * backlog, so no work is lost.
    */
-  async complete(id: string): Promise<CompleteSprintResult> {
+  async complete(id: string, dto: CompleteSprintDto = {}): Promise<CompleteSprintResult> {
     const sprint = await this.findOne(id);
 
     if (sprint.status === SprintStatus.PLANNED) {
@@ -101,18 +105,44 @@ export class SprintsService {
       throw new BadRequestException('This sprint is already completed');
     }
 
-    const tasks = await this.taskModel.find({ sprint: sprint._id }).select('status storyPoints').exec();
-    const committed = tasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
-    const completed = tasks
-      .filter((t) => t.status === TaskStatus.DONE)
-      .reduce((sum, t) => sum + (t.storyPoints || 0), 0);
+    // Check the destination BEFORE changing anything.
+    let target: SprintDocument | null = null;
+    if (dto.moveUnfinishedTo) {
+      if (String(dto.moveUnfinishedTo) === String(sprint._id)) {
+        throw new BadRequestException('Choose a different sprint for the unfinished tasks');
+      }
+      target = await this.sprintModel.findById(dto.moveUnfinishedTo);
+      if (!target) {
+        throw new NotFoundException('The sprint chosen for the unfinished tasks was not found');
+      }
+      if (String(target.project) !== String(sprint.project)) {
+        throw new BadRequestException('That sprint belongs to a different project');
+      }
+      if (target.status !== SprintStatus.PLANNED) {
+        throw new BadRequestException('Unfinished tasks can only be moved to a planned sprint');
+      }
+    }
 
-    const moved = await this.taskModel
-      .updateMany(
-        { sprint: sprint._id, status: { $ne: TaskStatus.DONE } },
-        { $set: { sprint: null } },
-      )
-      .exec();
+    // Task.sprint is stored as TEXT by the existing schema (and could be an ObjectId in
+    // future), so match both forms. The raw MongoDB collection is used on purpose so
+    // Mongoose does not convert the values and miss the stored ones.
+    const sprintIdText = String(sprint._id);
+    const inThisSprint = { sprint: { $in: [sprint._id, sprintIdText] } };
+    const tasks = this.taskModel.collection;
+
+    const sprintTasks = await tasks
+      .find(inThisSprint, { projection: { status: 1, storyPoints: 1 } })
+      .toArray();
+    const committed = sprintTasks.reduce((sum, t) => sum + (Number(t.storyPoints) || 0), 0);
+    const completed = sprintTasks
+      .filter((t) => t.status === TaskStatus.DONE)
+      .reduce((sum, t) => sum + (Number(t.storyPoints) || 0), 0);
+
+    // Stored as text, the same way the rest of the app saves the sprint link.
+    const moved = await tasks.updateMany(
+      { ...inThisSprint, status: { $ne: TaskStatus.DONE } },
+      { $set: { sprint: target ? String(target._id) : null, updatedAt: new Date() } },
+    );
 
     sprint.status = SprintStatus.COMPLETED;
     sprint.completedAt = new Date();
@@ -120,7 +150,11 @@ export class SprintsService {
     sprint.completedStoryPoints = completed;
     await sprint.save();
 
-    return { sprint, movedToBacklog: moved.modifiedCount };
+    return {
+      sprint,
+      movedCount: moved.modifiedCount,
+      movedToSprint: target ? { _id: String(target._id), name: target.name } : null,
+    };
   }
 }
 

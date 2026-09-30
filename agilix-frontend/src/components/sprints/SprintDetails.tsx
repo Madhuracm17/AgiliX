@@ -15,17 +15,26 @@ export interface SprintSummary {
 
 interface SprintDetailsProps {
   sprint: SprintSummary;
-  /** Tasks in this sprint that are not done (they go back to the backlog on completion). */
+  /** All sprints of the project (used to offer planned sprints for unfinished work). */
+  allSprints: SprintSummary[];
+  /** Tasks in this sprint that are not done. */
   unfinishedCount: number;
   /** Called after the sprint was started, completed or edited, to reload the page data. */
   onChanged: () => void | Promise<void>;
 }
 
+const BACKLOG = "backlog";
+
 /**
  * Details bar for the selected sprint: goal, dates, status and the
  * Start / Complete / Edit actions.
  */
-export default function SprintDetails({ sprint, unfinishedCount, onChanged }: SprintDetailsProps) {
+export default function SprintDetails({
+  sprint,
+  allSprints,
+  unfinishedCount,
+  onChanged,
+}: SprintDetailsProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -36,7 +45,14 @@ export default function SprintDetails({ sprint, unfinishedCount, onChanged }: Sp
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  // "Complete sprint" box: where unfinished tasks should go.
+  const [completing, setCompleting] = useState(false);
+  const [destination, setDestination] = useState(BACKLOG);
+
   const isCompleted = sprint.status === "completed";
+  const plannedSprints = allSprints.filter(
+    (s) => s.status === "planned" && s._id !== sprint._id
+  );
 
   const run = async (action: () => Promise<string | void>) => {
     setBusy(true);
@@ -59,21 +75,27 @@ export default function SprintDetails({ sprint, unfinishedCount, onChanged }: Sp
       return `${sprint.name} started.`;
     });
 
-  const handleComplete = () => {
-    const warning =
-      unfinishedCount > 0
-        ? `\n\n${unfinishedCount} unfinished task${unfinishedCount === 1 ? "" : "s"} will go back to the backlog.`
-        : "";
-    if (!window.confirm(`Complete ${sprint.name}?${warning}`)) return;
-
-    run(async () => {
-      const result = await completeSprint(sprint._id);
-      const moved = result.movedToBacklog;
-      return moved > 0
-        ? `${sprint.name} completed. ${moved} unfinished task${moved === 1 ? "" : "s"} moved back to the backlog.`
-        : `${sprint.name} completed.`;
-    });
+  const openComplete = () => {
+    setDestination(BACKLOG);
+    setError("");
+    setNotice("");
+    setCompleting(true);
   };
+
+  const confirmComplete = () =>
+    run(async () => {
+      const target = destination === BACKLOG ? undefined : destination;
+      const result = await completeSprint(sprint._id, target);
+      setCompleting(false);
+
+      const moved = result.movedCount;
+      if (moved === 0) return `${sprint.name} completed.`;
+
+      const tasks = `${moved} unfinished task${moved === 1 ? "" : "s"}`;
+      return result.movedToSprint
+        ? `${sprint.name} completed. ${tasks} moved to ${result.movedToSprint.name}.`
+        : `${sprint.name} completed. ${tasks} moved back to the backlog.`;
+    });
 
   const openEdit = () => {
     setName(sprint.name);
@@ -124,7 +146,7 @@ export default function SprintDetails({ sprint, unfinishedCount, onChanged }: Sp
           </p>
         </div>
 
-        {!isCompleted && !editing && (
+        {!isCompleted && !editing && !completing && (
           <div className="sprint-details-actions">
             <button type="button" className="secondary-button" onClick={openEdit} disabled={busy}>
               Edit
@@ -135,13 +157,75 @@ export default function SprintDetails({ sprint, unfinishedCount, onChanged }: Sp
               </button>
             )}
             {sprint.status === "active" && (
-              <button type="button" className="primary-button" onClick={handleComplete} disabled={busy}>
-                {busy ? "Completing…" : "Complete Sprint"}
+              <button type="button" className="primary-button" onClick={openComplete} disabled={busy}>
+                Complete Sprint
               </button>
             )}
           </div>
         )}
       </div>
+
+      {completing && (
+        <div className="sprint-complete-box">
+          <h3>Complete {sprint.name}</h3>
+
+          {unfinishedCount > 0 ? (
+            <>
+              <p>
+                {unfinishedCount} task{unfinishedCount === 1 ? " isn't" : "s aren't"} done.
+                Where should {unfinishedCount === 1 ? "it" : "they"} go?
+              </p>
+
+              <label className="sprint-complete-option">
+                <input
+                  type="radio"
+                  name={`complete-destination-${sprint._id}`}
+                  value={BACKLOG}
+                  checked={destination === BACKLOG}
+                  onChange={() => setDestination(BACKLOG)}
+                />
+                Back to the backlog
+              </label>
+
+              {plannedSprints.map((s) => (
+                <label className="sprint-complete-option" key={s._id}>
+                  <input
+                    type="radio"
+                    name={`complete-destination-${sprint._id}`}
+                    value={s._id}
+                    checked={destination === s._id}
+                    onChange={() => setDestination(s._id)}
+                  />
+                  Move to <strong>{s.name}</strong> (planned)
+                </label>
+              ))}
+
+              {plannedSprints.length === 0 && (
+                <p className="sprint-details-muted sprint-complete-hint">
+                  Tip: create a planned sprint first if you want to move them straight into
+                  the next sprint.
+                </p>
+              )}
+            </>
+          ) : (
+            <p>All tasks in this sprint are done. Complete it now?</p>
+          )}
+
+          <div className="form-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setCompleting(false)}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button type="button" className="primary-button" onClick={confirmComplete} disabled={busy}>
+              {busy ? "Completing…" : "Complete Sprint"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div className="sprint-edit-form">

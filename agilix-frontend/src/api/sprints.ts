@@ -37,8 +37,10 @@ export interface UpdateSprintData {
 
 export interface CompleteSprintResult {
   sprint: Sprint;
-  /** How many unfinished tasks went back to the backlog. */
-  movedToBacklog: number;
+  /** How many unfinished tasks were moved. */
+  movedCount: number;
+  /** The sprint they went to, or null when they went back to the backlog. */
+  movedToSprint: { _id: string; name: string } | null;
 }
 
 export function getSprints(projectId: string) {
@@ -68,7 +70,13 @@ export function startSprint(id: string) {
   return api<Sprint>(`/sprints/${id}/start`, { method: "PATCH" });
 }
 
-/** active → completed; unfinished tasks go back to the backlog. */
-export function completeSprint(id: string) {
-  return api<CompleteSprintResult>(`/sprints/${id}/complete`, { method: "PATCH" });
+/**
+ * active → completed. Unfinished tasks go to `moveUnfinishedTo` (a planned
+ * sprint's id), or back to the backlog when it is left out.
+ */
+export function completeSprint(id: string, moveUnfinishedTo?: string) {
+  return api<CompleteSprintResult>(`/sprints/${id}/complete`, {
+    method: "PATCH",
+    body: JSON.stringify(moveUnfinishedTo ? { moveUnfinishedTo } : {}),
+  });
 }

@@ -1721,6 +1721,7 @@ function SprintPage() {
               key={selectedSprint._id}
               sprint={selectedSprint}
               unfinishedCount={stats ? stats.total - stats.done : 0}
+              allSprints={sprints}
               onChanged={async () => {
                 await loadSprints();
                 await loadSprintDetails(selectedSprint._id);
