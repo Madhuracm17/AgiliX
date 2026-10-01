@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import AppShell from "./components/layout/AppShell";
 import StoryPointEstimator from "./components/ai/StoryPointEstimator";
 import PriorityRecommender from "./components/ai/PriorityRecommender";
+import TaskSuggestions from "./components/ai/TaskSuggestions";
 import SprintDetails from "./components/sprints/SprintDetails";
 import SprintStatusBadge from "./components/sprints/SprintStatusBadge";
 import SprintProgress from "./components/sprints/SprintProgress";
@@ -1222,6 +1223,8 @@ function BacklogPage() {
           + Create Task
         </button>
       </div>
+
+      {projectId && <TaskSuggestions projectId={projectId} />}
 
       {showForm && (
         <div className="form-card">

@@ -12,6 +12,8 @@ import { StoryPointEstimationService } from './story-point-estimation.service';
 import { EstimateStoryPointsDto } from './dto/estimate-story-points.dto';
 import { PriorityRecommendationService } from './priority-recommendation.service';
 import { RecommendPriorityDto } from './dto/recommend-priority.dto';
+import { TaskSuggestionService } from './task-suggestion.service';
+import { SuggestTasksDto } from './dto/suggest-tasks.dto';
 
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 
@@ -21,6 +23,7 @@ export class AiController {
     private readonly aiService: AiService,
     private readonly storyPointEstimation: StoryPointEstimationService,
     private readonly priorityRecommendation: PriorityRecommendationService,
+    private readonly taskSuggestions: TaskSuggestionService,
   ) {}
 
   @Get('sprint-risk/:sprintId')
@@ -43,5 +46,12 @@ export class AiController {
   @HttpCode(200)
   recommendPriority(@Body() dto: RecommendPriorityDto) {
     return this.priorityRecommendation.recommend(dto);
+  }
+
+  // Returns suggestions only — never creates or updates a task.
+  @Post('task-suggestions')
+  @HttpCode(200)
+  suggestTasks(@Body() dto: SuggestTasksDto) {
+    return this.taskSuggestions.suggest(dto);
   }
 }

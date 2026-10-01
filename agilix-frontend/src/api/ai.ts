@@ -64,3 +64,29 @@ export function recommendPriority(data: PriorityRecommendationRequest) {
     body: JSON.stringify(data),
   });
 }
+
+// ---- AI Task Suggestions ----
+
+export interface TaskSuggestion {
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  reasoning: string;
+  /** Title of the backlog task this suggestion follows from. */
+  basedOn: string;
+}
+
+export interface TaskSuggestionsResponse {
+  suggestions: TaskSuggestion[];
+}
+
+/**
+ * Returns AI task ideas derived from the project's current backlog
+ * (tasks not in a sprint). It never creates a task.
+ */
+export function suggestTasks(projectId: string) {
+  return api<TaskSuggestionsResponse>("/ai/task-suggestions", {
+    method: "POST",
+    body: JSON.stringify({ projectId }),
+  });
+}

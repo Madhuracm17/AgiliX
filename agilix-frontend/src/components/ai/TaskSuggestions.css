@@ -1,0 +1,63 @@
+/* ---- AI Task Suggestions (Backlog page) ---- */
+
+.task-suggestions {
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.task-suggestions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.task-suggestions-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.task-suggestions-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #626a7a;
+}
+
+.task-suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-suggestion-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-suggestion-title strong {
+  font-size: 14px;
+  color: #172033;
+  overflow-wrap: anywhere;
+}
+
+.task-suggestion-title .priority-badge {
+  flex-shrink: 0;
+}
+
+.task-suggestions-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sp-panel .task-suggestion-source {
+  color: #626a7a;
+}
