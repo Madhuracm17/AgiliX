@@ -14,10 +14,14 @@ import SprintProgress from "../sprints/SprintProgress";
 import SprintStatusBadge from "../sprints/SprintStatusBadge";
 import {
   SCRUM_COLUMNS,
+  SPRINT_WEEK_OPTIONS,
+  formatLongDate,
   initials,
+  nextSprintDates,
   nextStatus,
   priorityLabel,
   readError,
+  sprintLabel,
   statusLabel,
   typeLabel,
 } from "./taskDisplay";
@@ -49,8 +53,8 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Sprint length in weeks; the dates are worked out from it.
+  const [weeks, setWeeks] = useState(2);
 
   const [movingToBacklogId, setMovingToBacklogId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<TaskStatus | null>(null);
@@ -135,14 +139,13 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
     }
   };
 
+  // Dates of the sprint being created, from the chosen number of weeks.
+  const newSprintDates = nextSprintDates(sprints, weeks);
+
   const submitSprint = async () => {
     if (!projectId) return;
-    if (!name.trim() || !startDate || !endDate) {
-      alert("Please fill in the name, start date and end date.");
-      return;
-    }
-    if (endDate < startDate) {
-      alert("End date must be on or after the start date.");
+    if (!name.trim()) {
+      alert("Please enter a sprint name.");
       return;
     }
 
@@ -152,13 +155,12 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
         name: name.trim(),
         project: projectId,
         goal: goal.trim(),
-        startDate,
-        endDate,
+        startDate: newSprintDates.startDate,
+        endDate: newSprintDates.endDate,
       });
       setName("");
       setGoal("");
-      setStartDate("");
-      setEndDate("");
+      setWeeks(2);
       setShowForm(false);
       await loadSprints();
       setSelectedSprintId(created._id);
@@ -234,7 +236,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
           <label>Sprint name</label>
           <input
             type="text"
-            placeholder="Sprint 1"
+            placeholder="e.g. Login page"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -247,20 +249,22 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
             onChange={(e) => setGoal(e.target.value)}
           />
 
-          <label>Start date</label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-
-          <label>End date</label>
-          <input
-            type="date"
-            value={endDate}
-            min={startDate || undefined}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
+          <label htmlFor="new-sprint-weeks">Sprint duration</label>
+          <select
+            id="new-sprint-weeks"
+            value={weeks}
+            onChange={(e) => setWeeks(Number(e.target.value))}
+          >
+            {SPRINT_WEEK_OPTIONS.map((w) => (
+              <option key={w} value={w}>
+                {w} {w === 1 ? "week" : "weeks"}
+              </option>
+            ))}
+          </select>
+          <p className="scrum-sprint-dates">
+            Runs {formatLongDate(newSprintDates.startDate)} –{" "}
+            {formatLongDate(newSprintDates.endDate)}
+          </p>
 
           <div className="form-actions">
             <button className="secondary-button" onClick={() => setShowForm(false)}>
@@ -308,7 +312,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                 }`}
                 onClick={() => setSelectedSprintId(sprint._id)}
               >
-                {sprint.name}
+                {sprintLabel(sprint, sprints)}
                 <SprintStatusBadge status={sprint.status} />
               </button>
             ))}

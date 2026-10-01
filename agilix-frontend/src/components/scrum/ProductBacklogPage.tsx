@@ -6,7 +6,7 @@ import {
   addTaskToSprint,
   createTask,
   getBacklogTasks,
-  getSprintTasks,
+  getTasks,
   updateTask,
   type Task,
   type TaskPriority,
@@ -19,6 +19,8 @@ import TaskSuggestions from "../ai/TaskSuggestions";
 import {
   priorityLabel,
   readError,
+  sameId,
+  sprintLabel,
   statusLabel,
   typeLabel,
 } from "./taskDisplay";
@@ -31,11 +33,35 @@ interface ProductBacklogPageProps {
 
 type AddMode = "ai" | null;
 
+const SPRINT_STATUS_LABEL: Record<string, string> = {
+  active: "Active",
+  planned: "Planned",
+  completed: "Completed",
+};
+
+// Active sprint first, then planned (earliest first), then completed (newest first).
+function sortSprints(sprints: Sprint[]): Sprint[] {
+  const rank: Record<string, number> = { active: 0, planned: 1, completed: 2 };
+  const time = (s: Sprint) => new Date(s.completedAt ?? s.startDate).getTime();
+  return [...sprints].sort((a, b) => {
+    const byStatus = (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+    if (byStatus !== 0) return byStatus;
+    return a.status === "completed" ? time(b) - time(a) : time(a) - time(b);
+  });
+}
+
+function formatDate(date: string): string {
+  return new Date(date).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /**
  * Product Backlog (Figma "Product Backlog" screen). New tasks are created
  * here, in one of two ways: AI suggestions (each one can be added to a
  * sprint or to the backlog) or the user's own New Task form. Below that:
- * the active sprint's tasks and the backlog. Opening a backlog row shows
+ * every sprint with its tasks (active, planned, completed) and the backlog. Opening a backlog row shows
  * the AI priority / story-point helpers and "Add to sprint".
  */
 export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPageProps) {
@@ -44,7 +70,10 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
 
   const [backlog, setBacklog] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [sprintTasks, setSprintTasks] = useState<Task[]>([]);
+  // Every task of the project, used to list each sprint with its tasks.
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
+  // Sprint tables the user opened or closed (completed sprints start closed).
+  const [toggledSprints, setToggledSprints] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
@@ -62,15 +91,14 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
     try {
       if (!quiet) setLoading(true);
       setError("");
-      const [backlogData, sprintData] = await Promise.all([
+      const [backlogData, sprintData, taskData] = await Promise.all([
         getBacklogTasks(projectId),
         getSprints(projectId),
+        getTasks(projectId),
       ]);
       setBacklog(backlogData);
       setSprints(sprintData);
-
-      const active = sprintData.find((s) => s.status === "active");
-      setSprintTasks(active ? await getSprintTasks(active._id) : []);
+      setAllTasks(taskData);
     } catch (err) {
       setError(readError(err, "Failed to load backlog"));
     } finally {
@@ -82,10 +110,16 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
     load();
   }, [projectId]);
 
-  const activeSprint = sprints.find((s) => s.status === "active") ?? null;
   // Tasks can only be added to sprints that are not completed yet.
   const openSprints = sprints.filter((s) => s.status !== "completed");
-  const sprintDone = sprintTasks.filter((t) => t.status === "done").length;
+  const orderedSprints = sortSprints(sprints);
+  const tasksOf = (sprint: Sprint) =>
+    allTasks.filter((t) => sameId(t.sprint, sprint._id));
+
+  const isOpen = (sprint: Sprint) =>
+    toggledSprints[sprint._id] ?? sprint.status !== "completed";
+  const toggleSprint = (sprint: Sprint) =>
+    setToggledSprints((prev) => ({ ...prev, [sprint._id]: !isOpen(sprint) }));
 
   // Update one backlog task locally (a full reload would close the open row).
   const patchLocal = (taskId: string, changes: Partial<Task>) =>
@@ -142,10 +176,12 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
       });
       if (sprintId) await addTaskToSprint(task._id, sprintId);
 
-      const sprintName = sprints.find((s) => s._id === sprintId)?.name;
+      const sprint = sprints.find((s) => s._id === sprintId);
       setAddedSuggestions((prev) => ({
         ...prev,
-        [key]: sprintName ? `Added to ${sprintName}` : "Added to the backlog",
+        [key]: sprint
+          ? `Added to ${sprintLabel(sprint, sprints)}`
+          : "Added to the backlog",
       }));
       await load(true);
     } catch (err) {
@@ -155,14 +191,12 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
     }
   };
 
-  // "Add to Sprint": straight in when there is only one open sprint,
-  // otherwise the user picks which one.
+  // "Add to Sprint" shows the open sprints, e.g. "Sprint 5 (login page)",
+  // and the task is added to the one the user picks.
   const addSuggestionToSprint = (suggestion: TaskSuggestion) => {
-    if (openSprints.length === 1) {
-      addSuggestion(suggestion, openSprints[0]._id);
-    } else {
-      setPickingSprintFor(suggestion.title);
-    }
+    setPickingSprintFor((current) =>
+      current === suggestion.title ? null : suggestion.title
+    );
   };
 
   const renderSuggestionActions = (suggestion: TaskSuggestion) => {
@@ -200,8 +234,8 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
             <option value="">Choose a sprint…</option>
             {openSprints.map((sprint) => (
               <option key={sprint._id} value={sprint._id}>
-                {sprint.name}
-                {sprint.status === "active" ? " (active)" : ""}
+                {sprintLabel(sprint, sprints)}
+                {sprint.status === "active" ? " · Active" : " · Planned"}
               </option>
             ))}
           </select>
@@ -240,7 +274,7 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
             aria-pressed={addMode === "ai"}
             onClick={() => setAddMode(addMode === "ai" ? null : "ai")}
           >
-            <strong>✨ AI Task Suggestions</strong>
+            <strong>AI Suggestions</strong>
             <span>Let AI suggest tasks based on this backlog</span>
           </button>
           <button
@@ -248,8 +282,7 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
             className="scrum-add-option"
             onClick={() => navigate(`/projects/${projectId}/tasks/new?sprint=backlog`)}
           >
-            <strong>✍️ Create it myself</strong>
-            <span>Open the New Task form</span>
+            <strong>+ Create New Task</strong>
           </button>
         </div>
 
@@ -278,27 +311,15 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
 
       {!loading && !error && (
         <>
-          <section className="scrum-panel">
-            <div className="scrum-panel-header">
-              {activeSprint ? (
-                <>
-                  <h2>
-                    Sprint <span>{activeSprint.name} (Active)</span>
-                  </h2>
-                  <span className="scrum-panel-meta">
-                    In Progress · {sprintDone}/{sprintTasks.length} done
-                  </span>
-                </>
-              ) : (
+          {orderedSprints.length === 0 && (
+            <section className="scrum-panel">
+              <div className="scrum-panel-header">
                 <h2>
-                  Sprint <span>none active</span>
+                  Sprints <span>none yet</span>
                 </h2>
-              )}
-            </div>
-
-            {!activeSprint ? (
+              </div>
               <p className="scrum-panel-empty">
-                No sprint is running. Plan and start one on the{" "}
+                No sprints yet. Create one on the{" "}
                 <button
                   type="button"
                   className="scrum-inline-link"
@@ -308,44 +329,79 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                 </button>
                 .
               </p>
-            ) : sprintTasks.length === 0 ? (
-              <p className="scrum-panel-empty">
-                The active sprint has no tasks yet. Open a backlog task below and
-                add it to the sprint.
-              </p>
-            ) : (
-              <div className="scrum-table-wrap">
-                <table className="scrum-table">
-                  <thead>
-                    <tr>
-                      <th>Task</th>
-                      <th>Priority</th>
-                      <th>Pts</th>
-                      <th>Assignee</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sprintTasks.map((task) => (
-                      <tr key={task._id}>
-                        <td className={task.status === "done" ? "scrum-done" : ""}>
-                          {task.title}
-                        </td>
-                        <td>
-                          <span className={`priority-badge priority-${task.priority}`}>
-                            {priorityLabel(task.priority)}
-                          </span>
-                        </td>
-                        <td>{task.storyPoints ?? 0}</td>
-                        <td>{task.assignee?.name ?? "Unassigned"}</td>
-                        <td>{statusLabel(task.status)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+            </section>
+          )}
+
+          {orderedSprints.map((sprint) => {
+            const tasks = tasksOf(sprint);
+            const done = tasks.filter((t) => t.status === "done").length;
+            const points = tasks.reduce((sum, t) => sum + (t.storyPoints ?? 0), 0);
+            const open = isOpen(sprint);
+
+            return (
+              <section
+                key={sprint._id}
+                className={`scrum-panel scrum-sprint-panel scrum-sprint-${sprint.status}`}
+              >
+                <button
+                  type="button"
+                  className="scrum-panel-header scrum-sprint-toggle"
+                  aria-expanded={open}
+                  onClick={() => toggleSprint(sprint)}
+                >
+                  <h2>
+                    {sprintLabel(sprint, sprints)}{" "}
+                    <span>· {SPRINT_STATUS_LABEL[sprint.status] ?? sprint.status}</span>
+                  </h2>
+                  <span className="scrum-panel-meta">
+                    {formatDate(sprint.startDate)} – {formatDate(sprint.endDate)} ·{" "}
+                    {done}/{tasks.length} done · {points} pts{" "}
+                    <span className="scrum-chevron">{open ? "▴" : "▾"}</span>
+                  </span>
+                </button>
+
+                {open &&
+                  (tasks.length === 0 ? (
+                    <p className="scrum-panel-empty">
+                      {sprint.status === "completed"
+                        ? "No tasks were finished in this sprint."
+                        : "No tasks in this sprint yet. Open a backlog task below and add it to this sprint."}
+                    </p>
+                  ) : (
+                    <div className="scrum-table-wrap">
+                      <table className="scrum-table">
+                        <thead>
+                          <tr>
+                            <th>Task</th>
+                            <th>Priority</th>
+                            <th>Pts</th>
+                            <th>Assignee</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tasks.map((task) => (
+                            <tr key={task._id}>
+                              <td className={task.status === "done" ? "scrum-done" : ""}>
+                                {task.title}
+                              </td>
+                              <td>
+                                <span className={`priority-badge priority-${task.priority}`}>
+                                  {priorityLabel(task.priority)}
+                                </span>
+                              </td>
+                              <td>{task.storyPoints ?? 0}</td>
+                              <td>{task.assignee?.name ?? "Unassigned"}</td>
+                              <td>{statusLabel(task.status)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+              </section>
+            );
+          })}
 
           <section className="scrum-panel">
             <div className="scrum-panel-header">
@@ -443,8 +499,8 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                                           <option value="">+ Add to sprint...</option>
                                           {openSprints.map((sprint) => (
                                             <option key={sprint._id} value={sprint._id}>
-                                              {sprint.name}
-                                              {sprint.status === "active" ? " (active)" : ""}
+                                              {sprintLabel(sprint, sprints)}
+                                              {sprint.status === "active" ? " · Active" : " · Planned"}
                                             </option>
                                           ))}
                                         </select>

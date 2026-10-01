@@ -30,6 +30,12 @@
   color: #7c8494;
 }
 
+.scrum-sprint-dates {
+  margin: 0;
+  font-size: 12px;
+  color: #626a7a;
+}
+
 /* ---- Board ---- */
 
 /* Always 4 columns side by side (Figma). On narrow screens the board
@@ -334,6 +340,42 @@
   padding: 6px 8px;
   font: inherit;
   font-size: 13px;
+}
+
+/* ---- One panel per sprint in the Product Backlog ---- */
+
+.scrum-sprint-toggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.scrum-sprint-panel {
+  border-left-width: 4px;
+}
+
+.scrum-sprint-active {
+  border-left-color: #635bff;
+}
+
+.scrum-sprint-planned {
+  border-left-color: #c9c6ff;
+}
+
+.scrum-sprint-completed {
+  border-left-color: #c8efd7;
+}
+
+.scrum-sprint-completed .scrum-sprint-toggle:only-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 /* ---- "Add a task" chooser + AI suggestion buttons ---- */

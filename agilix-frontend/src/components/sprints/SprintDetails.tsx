@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { completeSprint, startSprint, updateSprint } from "../../api/sprints";
 import SprintStatusBadge from "./SprintStatusBadge";
+import { sprintLabel } from "../scrum/taskDisplay";
 import "./SprintDetails.css";
 
 /** The sprint fields this component needs (works with App.tsx's Sprint type). */
@@ -54,6 +55,10 @@ export default function SprintDetails({
     (s) => s.status === "planned" && s._id !== sprint._id
   );
 
+  // "Sprint 2 (Login page)" — sprint number by start date + the sprint's name.
+  const label = (s: SprintSummary) => sprintLabel(s, allSprints);
+  const title = label(sprint);
+
   const run = async (action: () => Promise<string | void>) => {
     setBusy(true);
     setError("");
@@ -72,7 +77,7 @@ export default function SprintDetails({
   const handleStart = () =>
     run(async () => {
       await startSprint(sprint._id);
-      return `${sprint.name} started.`;
+      return `${title} started.`;
     });
 
   const openComplete = () => {
@@ -89,12 +94,13 @@ export default function SprintDetails({
       setCompleting(false);
 
       const moved = result.movedCount;
-      if (moved === 0) return `${sprint.name} completed.`;
+      if (moved === 0) return `${title} completed.`;
 
       const tasks = `${moved} unfinished task${moved === 1 ? "" : "s"}`;
+      const movedTo = allSprints.find((s) => s._id === result.movedToSprint?._id);
       return result.movedToSprint
-        ? `${sprint.name} completed. ${tasks} moved to ${result.movedToSprint.name}.`
-        : `${sprint.name} completed. ${tasks} moved back to the backlog.`;
+        ? `${title} completed. ${tasks} moved to ${movedTo ? label(movedTo) : result.movedToSprint.name}.`
+        : `${title} completed. ${tasks} moved back to the backlog.`;
     });
 
   const openEdit = () => {
@@ -129,7 +135,7 @@ export default function SprintDetails({
       <div className="sprint-details-header">
         <div className="sprint-details-info">
           <div className="sprint-details-title">
-            <h2>{sprint.name}</h2>
+            <h2>{title}</h2>
             <SprintStatusBadge status={sprint.status} />
           </div>
           <p className="sprint-details-dates">
@@ -167,7 +173,7 @@ export default function SprintDetails({
 
       {completing && (
         <div className="sprint-complete-box">
-          <h3>Complete {sprint.name}</h3>
+          <h3>Complete {title}</h3>
 
           {unfinishedCount > 0 ? (
             <>
@@ -196,7 +202,7 @@ export default function SprintDetails({
                     checked={destination === s._id}
                     onChange={() => setDestination(s._id)}
                   />
-                  Move to <strong>{s.name}</strong> (planned)
+                  Move to <strong>{label(s)}</strong> (planned)
                 </label>
               ))}
 
@@ -230,7 +236,13 @@ export default function SprintDetails({
       {editing && (
         <div className="sprint-edit-form">
           <label htmlFor="sprint-edit-name">Sprint name</label>
-          <input id="sprint-edit-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
+          <input
+            id="sprint-edit-name"
+            type="text"
+            placeholder="e.g. Login page"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
 
           <label htmlFor="sprint-edit-goal">Sprint goal</label>
           <textarea
