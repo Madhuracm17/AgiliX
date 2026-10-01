@@ -1,0 +1,525 @@
+/* ---- Scrum pages: Scrum Board, Product Backlog, New Task ---- */
+
+.scrum-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.scrum-hint {
+  margin: 0 0 14px;
+}
+
+.scrum-inline-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: #635bff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scrum-inline-link:hover {
+  text-decoration: underline;
+}
+
+.scrum-done {
+  text-decoration: line-through;
+  color: #7c8494;
+}
+
+/* ---- Board ---- */
+
+/* Always 4 columns side by side (Figma). On narrow screens the board
+   scrolls sideways instead of wrapping onto a second row. */
+.scrum-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(210px, 1fr));
+  gap: 14px;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.scrum-column {
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 18px;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.scrum-column-over {
+  border-color: #635bff;
+  background: #f4f3ff;
+}
+
+.scrum-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e7e9ef;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #172033;
+}
+
+.scrum-column-count {
+  background: #f3f4f8;
+  color: #626a7a;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+}
+
+.scrum-column-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scrum-empty {
+  margin: 8px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #9aa1af;
+}
+
+.scrum-card {
+  background: #f6f7fb;
+  border: 1px solid #eceef3;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: grab;
+}
+
+.scrum-card[draggable="false"] {
+  cursor: default;
+}
+
+.scrum-card h3 {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.scrum-summary {
+  margin: 0;
+  font-size: 12px;
+  color: #626a7a;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.scrum-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scrum-tag {
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e3e5ec;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #3f4757;
+}
+
+.scrum-tag-high {
+  background: #feecec;
+  border-color: #fbd3d3;
+  color: #d43f3f;
+}
+
+.scrum-tag-medium {
+  background: #fff6e5;
+  border-color: #fde3b4;
+  color: #b8790a;
+}
+
+.scrum-tag-low {
+  background: #eafaf0;
+  border-color: #c8efd7;
+  color: #1e9e5a;
+}
+
+.scrum-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #626a7a;
+}
+
+.scrum-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eeedff;
+  color: #5148d8;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.scrum-avatar-empty {
+  background: #eef0f4;
+  color: #9aa1af;
+}
+
+.scrum-move-button {
+  width: 100%;
+  border: 1px solid #c9c6ff;
+  border-radius: 7px;
+  background: #eeedff;
+  color: #4b43d6;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scrum-move-button:hover {
+  background: #e2e0ff;
+}
+
+.scrum-header-actions button {
+  white-space: nowrap;
+}
+
+.scrum-card-final {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e9e5a;
+}
+
+/* ---- Product Backlog panels ---- */
+
+.scrum-panel {
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 20px;
+  padding: 18px 22px;
+  margin-bottom: 20px;
+}
+
+.scrum-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e7e9ef;
+}
+
+.scrum-panel-header h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.scrum-panel-header h2 span {
+  margin-left: 14px;
+  font-weight: 500;
+  color: #626a7a;
+}
+
+.scrum-panel-meta {
+  font-size: 13px;
+  color: #626a7a;
+}
+
+.scrum-panel-empty {
+  margin: 14px 0 2px;
+  font-size: 13px;
+  color: #626a7a;
+}
+
+.scrum-table-wrap {
+  overflow-x: auto;
+}
+
+.scrum-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.scrum-table th {
+  text-align: left;
+  font-weight: 600;
+  color: #626a7a;
+  padding: 12px 10px;
+  border-bottom: 1px solid #e7e9ef;
+  white-space: nowrap;
+}
+
+.scrum-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #f1f2f6;
+  color: #172033;
+}
+
+.scrum-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.scrum-table-clickable tbody tr:not(.scrum-detail-row) {
+  cursor: pointer;
+}
+
+.scrum-table-clickable tbody tr:not(.scrum-detail-row):hover td,
+.scrum-row-open td {
+  background: #f8f8fc;
+}
+
+.scrum-chevron {
+  width: 28px;
+  text-align: center;
+  color: #9aa1af;
+}
+
+.scrum-detail-row > td {
+  background: #f8f8fc;
+  padding: 4px 14px 16px;
+}
+
+.scrum-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scrum-detail-text {
+  margin: 0;
+  color: #3f4757;
+}
+
+.scrum-detail-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.scrum-detail-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #3f4757;
+}
+
+.scrum-detail-controls select {
+  border: 1px solid #dfe2e9;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* ---- "Add a task" chooser + AI suggestion buttons ---- */
+
+.scrum-add-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.scrum-add-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid #e3e5ec;
+  border-radius: 14px;
+  background: #f8f8fc;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: #172033;
+}
+
+.scrum-add-option:hover,
+.scrum-add-option.selected {
+  border-color: #c9c6ff;
+  background: #f4f3ff;
+}
+
+.scrum-add-option strong {
+  font-size: 14px;
+}
+
+.scrum-add-option span {
+  font-size: 12px;
+  color: #626a7a;
+}
+
+.scrum-add-ai {
+  margin-top: 14px;
+}
+
+.scrum-add-ai .task-suggestions {
+  margin-bottom: 0;
+}
+
+.scrum-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.scrum-suggestion-actions button {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.scrum-suggestion-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.scrum-suggestion-actions select {
+  border: 1px solid #dfe2e9;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.scrum-suggestion-added,
+.sp-panel .scrum-suggestion-added {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e9e5a;
+}
+
+/* ---- New Task ---- */
+
+.new-task-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px 28px;
+}
+
+.new-task-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.new-task-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3f4757;
+  margin-top: 6px;
+}
+
+.new-task-ai {
+  background: #f4f3ff;
+  border: 1px solid #e2e0ff;
+  border-radius: 18px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.new-task-ai-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #635bff;
+}
+
+.new-task-ai-points {
+  margin: 0;
+  font-size: 13px;
+  color: #3f4757;
+}
+
+.new-task-ai-points span {
+  color: #7c8494;
+}
+
+.new-task-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.new-task-pill {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #f3f4f8;
+  color: #3f4757;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.new-task-pill.selected {
+  border-color: currentColor;
+}
+
+.new-task-pill:not(.priority-high):not(.priority-medium):not(.priority-low).selected {
+  background: #eeedff;
+  color: #5148d8;
+}
+
+.new-task-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.new-task-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #7c8494;
+}
+
+.new-task-error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #d43f3f;
+}
+
+@media (max-width: 760px) {
+  .scrum-add-options,
+  .new-task-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scrum-page .page-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
