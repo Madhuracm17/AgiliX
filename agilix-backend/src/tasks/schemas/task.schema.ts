@@ -6,6 +6,8 @@ export type TaskDocument = Task & Document;
 export enum TaskStatus {
   TODO = 'todo',
   IN_PROGRESS = 'in_progress',
+  // Work is finished and waiting to be checked (Scrum Board "Review" column).
+  REVIEW = 'review',
   DONE = 'done',
 }
 
@@ -13,6 +15,16 @@ export enum TaskPriority {
   LOW = 'low',
   MEDIUM = 'medium',
   HIGH = 'high',
+}
+
+// What kind of work a task is (shown as a tag on the Scrum Board and backlog).
+export enum TaskType {
+  FRONTEND = 'frontend',
+  BACKEND = 'backend',
+  DATABASE = 'database',
+  FEATURE = 'feature',
+  BUG = 'bug',
+  SECURITY = 'security',
 }
 
 @Schema({ timestamps: true })
@@ -41,6 +53,10 @@ export class Task {
 
   @Prop({ default: 0 })
   storyPoints: number;
+
+  // Optional: older tasks simply have no type.
+  @Prop({ type: String, enum: TaskType })
+  type?: TaskType;
 }
 
 export const TaskSchema = SchemaFactory.createForClass(Task);

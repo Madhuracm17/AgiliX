@@ -1,0 +1,264 @@
+/* ---- Scrum project dashboard (Figma "Dashboard" screen) ---- */
+
+.dash-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -12px 0 22px;
+}
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.dash-stat {
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 999px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dash-stat > span {
+  font-size: 13px;
+  color: #626a7a;
+}
+
+.dash-stat > strong {
+  font-size: 24px;
+  color: #172033;
+}
+
+.dash-panel {
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 20px;
+  padding: 22px 24px;
+}
+
+.dash-panel .dash-stat {
+  background: #f6f7fb;
+}
+
+.dash-panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.dash-panel-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.dash-sprint-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #635bff;
+}
+
+.dash-goal {
+  margin: -6px 0 14px;
+  font-size: 13px;
+  color: #3d4556;
+}
+
+.dash-muted {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #626a7a;
+}
+
+.dash-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #f6f7fb;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+}
+
+.dash-empty p {
+  margin: 0;
+  font-size: 14px;
+  color: #3d4556;
+}
+
+.dash-panel .sprint-progress {
+  margin-bottom: 18px;
+}
+
+.dash-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #635bff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dash-link:disabled {
+  color: #9aa1af;
+  cursor: wait;
+}
+
+.dash-check {
+  font-size: 14px;
+  padding: 4px 0;
+}
+
+.dash-error {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #d43f3f;
+}
+
+.dash-risk {
+  font-size: 24px;
+}
+
+.dash-risk-green {
+  color: #1e9e5a !important;
+}
+
+.dash-risk-yellow {
+  color: #b8790a !important;
+}
+
+.dash-risk-red {
+  color: #d43f3f !important;
+}
+
+.dash-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dash-card {
+  background: #f6f7fb;
+  border-radius: 20px;
+  padding: 18px 20px;
+  min-width: 0;
+}
+
+.dash-card h3 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  text-align: center;
+}
+
+.dash-activity {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+  color: #172033;
+}
+
+.dash-activity li {
+  overflow-wrap: anywhere;
+}
+
+.dash-activity span {
+  color: #7c8494;
+}
+
+.dash-my-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dash-my-tasks li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #ffffff;
+  border-radius: 999px;
+  padding: 10px 16px;
+}
+
+.dash-my-tasks li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dash-my-tasks strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-my-tasks span {
+  font-size: 12px;
+  color: #7c8494;
+}
+
+.dash-done {
+  text-decoration: line-through;
+  color: #7c8494;
+}
+
+.dash-badge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  padding: 3px 12px;
+  font-size: 12px !important;
+  font-weight: 600;
+  background: #ffffff;
+}
+
+.dash-badge-high {
+  color: #d43f3f !important;
+}
+
+.dash-badge-medium {
+  color: #b8790a !important;
+}
+
+.dash-badge-low {
+  color: #1e9e5a !important;
+}
+
+.dash-badge-done {
+  color: #2f6fdf !important;
+}
+
+@media (max-width: 900px) {
+  .dash-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .dash-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-stat {
+    border-radius: 14px;
+  }
+}

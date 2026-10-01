@@ -1,8 +1,25 @@
 import { api } from "./client";
 import type { User } from "./users";
 
-export type TaskStatus = "todo" | "in_progress" | "done";
+export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 export type TaskPriority = "low" | "medium" | "high";
+export type TaskType =
+  | "frontend"
+  | "backend"
+  | "database"
+  | "feature"
+  | "bug"
+  | "security";
+
+/** Task types in the order they appear in dropdowns, with display labels. */
+export const TASK_TYPES: { value: TaskType; label: string }[] = [
+  { value: "frontend", label: "Frontend" },
+  { value: "backend", label: "Backend" },
+  { value: "database", label: "Database" },
+  { value: "feature", label: "Feature" },
+  { value: "bug", label: "Bug" },
+  { value: "security", label: "Security" },
+];
 
 export interface Task {
   _id: string;
@@ -14,6 +31,7 @@ export interface Task {
   sprint?: string | null;
   assignee?: User | null;
   storyPoints?: number;
+  type?: TaskType | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -25,6 +43,7 @@ export interface CreateTaskData {
   priority?: TaskPriority;
   assignee?: string;
   storyPoints?: number;
+  type?: TaskType;
 }
 
 export interface UpdateTaskData {
@@ -35,12 +54,15 @@ export interface UpdateTaskData {
   sprint?: string | null;
   assignee?: string | null;
   storyPoints?: number;
+  type?: TaskType;
 }
 
 export interface SprintStats {
   total: number;
   done: number;
   inProgress: number;
+  /** Missing when talking to an older backend. */
+  review?: number;
   todo: number;
   totalStoryPoints: number;
   completedStoryPoints: number;
