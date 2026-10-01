@@ -30,6 +30,12 @@
   color: #7c8494;
 }
 
+.scrum-sprint-dates {
+  margin: 0;
+  font-size: 12px;
+  color: #626a7a;
+}
+
 /* ---- Board ---- */
 
 /* Always 4 columns side by side (Figma). On narrow screens the board

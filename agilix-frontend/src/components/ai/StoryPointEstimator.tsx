@@ -115,8 +115,8 @@ export default function StoryPointEstimator({
         {loading
           ? "Estimating…"
           : result
-            ? "✨ Re-estimate with AI"
-            : "✨ Estimate with AI"}
+            ? "Re-estimate with AI"
+            : "Estimate with AI"}
       </button>
 
       {error && (

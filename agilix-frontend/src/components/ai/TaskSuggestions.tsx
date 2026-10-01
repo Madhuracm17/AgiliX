@@ -62,8 +62,8 @@ export default function TaskSuggestions({
           {loading
             ? "Generating…"
             : suggestions
-              ? "✨ Generate Again"
-              : "✨ Generate Suggestions"}
+              ? "Generate Again"
+              : "Generate Suggestions"}
         </button>
       </div>
 

@@ -114,8 +114,8 @@ export default function PriorityRecommender({
         {loading
           ? "Recommending…"
           : result
-            ? "✨ Re-recommend with AI"
-            : "✨ Recommend Priority with AI"}
+            ? "Re-recommend with AI"
+            : "Recommend Priority with AI"}
       </button>
 
       {error && (

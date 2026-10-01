@@ -54,6 +54,52 @@ export function sprintLabel(sprint: SprintLike, allSprints: SprintLike[]): strin
   return number > 0 ? `Sprint ${number} (${name})` : name;
 }
 
+/** Sprint lengths offered when creating a sprint. */
+export const SPRINT_WEEK_OPTIONS = [1, 2, 3, 4, 5, 6];
+
+/** A Date as "YYYY-MM-DD" in the user's own time zone. */
+function toDateInput(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Dates for a new sprint of `weeks` weeks. It starts the day after the last
+ * planned/active sprint ends (so sprints line up one after another), or
+ * today if there is none. A 2-week sprint starting Oct 2 ends Oct 15.
+ */
+export function nextSprintDates(
+  sprints: { status: string; endDate: string }[],
+  weeks: number
+): { startDate: string; endDate: string } {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let start = today;
+  for (const sprint of sprints) {
+    if (sprint.status === "completed") continue;
+    const dayAfter = new Date(sprint.endDate);
+    dayAfter.setHours(0, 0, 0, 0);
+    dayAfter.setDate(dayAfter.getDate() + 1);
+    if (dayAfter > start) start = dayAfter;
+  }
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + weeks * 7 - 1);
+  return { startDate: toDateInput(start), endDate: toDateInput(end) };
+}
+
+/** "Oct 2, 2026" */
+export function formatLongDate(date: string): string {
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function priorityLabel(priority: string): string {
   return priority.charAt(0).toUpperCase() + priority.slice(1);
 }

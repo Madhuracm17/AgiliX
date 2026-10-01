@@ -274,7 +274,7 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
             aria-pressed={addMode === "ai"}
             onClick={() => setAddMode(addMode === "ai" ? null : "ai")}
           >
-            <strong>✨ AI Suggestions</strong>
+            <strong>AI Suggestions</strong>
             <span>Let AI suggest tasks based on this backlog</span>
           </button>
           <button
@@ -282,8 +282,7 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
             className="scrum-add-option"
             onClick={() => navigate(`/projects/${projectId}/tasks/new?sprint=backlog`)}
           >
-            <strong>✍️ Add manually</strong>
-            <span>Fill in the New Task form yourself</span>
+            <strong>+ Create New Task</strong>
           </button>
         </div>
 

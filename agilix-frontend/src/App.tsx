@@ -275,7 +275,7 @@ function TaskTimer({ task }: { task: Task }) {
         </span>
 
         <div className="timer-inactivity-warning">
-          <span>⚠️ Timer paused due to inactivity</span>
+          <span>Timer paused due to inactivity</span>
           <button className="timer-button" onClick={resume}>
             ▶ Resume Timer
           </button>
@@ -856,8 +856,6 @@ function ProjectOverviewPage() {
               <span className="eyebrow">BACKLOG</span>
               <h2>Tasks</h2>
             </div>
-
-            <span className="dashboard-icon">📋</span>
           </div>
 
           <p>
@@ -880,8 +878,6 @@ function ProjectOverviewPage() {
                 <span className="eyebrow">KANBAN</span>
                 <h2>Board</h2>
               </div>
-
-              <span className="dashboard-icon">🗂️</span>
             </div>
 
             <p>
@@ -903,8 +899,6 @@ function ProjectOverviewPage() {
                 <span className="eyebrow">SPRINT</span>
                 <h2>Active Sprint</h2>
               </div>
-
-              <span className="dashboard-icon">🏃</span>
             </div>
 
             <p>
@@ -927,8 +921,6 @@ function ProjectOverviewPage() {
               <span className="eyebrow">TEAM</span>
               <h2>Members</h2>
             </div>
-
-            <span className="dashboard-icon">👥</span>
           </div>
 
           <p>
@@ -950,8 +942,6 @@ function ProjectOverviewPage() {
               <span className="eyebrow">REPORTS</span>
               <h2>Progress</h2>
             </div>
-
-            <span className="dashboard-icon">📊</span>
           </div>
 
           <p>
@@ -974,8 +964,6 @@ function ProjectOverviewPage() {
                 <span className="eyebrow">AI INSIGHTS</span>
                 <h2>Sprint Risk</h2>
               </div>
-
-              <span className="dashboard-icon">🤖</span>
             </div>
 
             <p>
@@ -998,8 +986,6 @@ function ProjectOverviewPage() {
               <span className="eyebrow">PROJECT</span>
               <h2>Quick Actions</h2>
             </div>
-
-            <span className="dashboard-icon">🚀</span>
           </div>
 
           <p>

@@ -242,7 +242,7 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
                         onClick={checkConfidence}
                         disabled={checkingRisk}
                       >
-                        {checkingRisk ? "Checking…" : "✨ Check with AI"}
+                        {checkingRisk ? "Checking…" : "Check with AI"}
                       </button>
                     )}
                   </div>
