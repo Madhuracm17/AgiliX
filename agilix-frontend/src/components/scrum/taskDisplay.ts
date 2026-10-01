@@ -27,6 +27,33 @@ export function typeLabel(type: TaskType | null | undefined): string {
   return TASK_TYPES.find((t) => t.value === type)?.label ?? "—";
 }
 
+interface SprintLike {
+  _id: string;
+  name: string;
+  startDate: string;
+  createdAt?: string;
+}
+
+/**
+ * "Sprint 5 (login page)": the sprint's number (by start date, oldest =
+ * Sprint 1) followed by its name. A sprint already named like "Sprint 5"
+ * is shown as-is so it doesn't read "Sprint 5 (Sprint 5)".
+ */
+export function sprintLabel(sprint: SprintLike, allSprints: SprintLike[]): string {
+  const name = sprint.name.trim();
+  if (/^sprint\s*\d+$/i.test(name)) return name;
+
+  const time = (s: SprintLike) => new Date(s.startDate).getTime();
+  const ordered = [...allSprints].sort(
+    (a, b) =>
+      time(a) - time(b) ||
+      new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime() ||
+      a._id.localeCompare(b._id)
+  );
+  const number = ordered.findIndex((s) => s._id === sprint._id) + 1;
+  return number > 0 ? `Sprint ${number} (${name})` : name;
+}
+
 export function priorityLabel(priority: string): string {
   return priority.charAt(0).toUpperCase() + priority.slice(1);
 }

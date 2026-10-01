@@ -12,7 +12,7 @@ import {
 import type { StoryPointValue } from "../../api/ai";
 import StoryPointEstimator from "../ai/StoryPointEstimator";
 import PriorityRecommender from "../ai/PriorityRecommender";
-import { readError } from "./taskDisplay";
+import { readError, sprintLabel } from "./taskDisplay";
 import "./scrum.css";
 
 const PRIORITIES: { value: TaskPriority; label: string }[] = [
@@ -35,6 +35,7 @@ export default function NewTaskPage() {
 
   const [users, setUsers] = useState<User[]>([]);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
+  const [allSprints, setAllSprints] = useState<Sprint[]>([]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -54,6 +55,7 @@ export default function NewTaskPage() {
     Promise.all([getUsers(), getSprints(projectId)])
       .then(([userData, sprintData]) => {
         setUsers(userData);
+        setAllSprints(sprintData);
         setActiveSprint(sprintData.find((s) => s.status === "active") ?? null);
       })
       .catch((err) => setError(readError(err, "Failed to load the form data")));
@@ -215,10 +217,10 @@ export default function NewTaskPage() {
                 className={`new-task-pill ${goesToSprint ? "selected" : ""}`}
                 aria-pressed={goesToSprint}
                 disabled={!activeSprint}
-                title={activeSprint ? activeSprint.name : "No active sprint"}
+                title={activeSprint ? sprintLabel(activeSprint, allSprints) : "No active sprint"}
                 onClick={() => setSprintChoice("current")}
               >
-                Current{activeSprint ? ` (${activeSprint.name})` : ""}
+                Current{activeSprint ? ` · ${sprintLabel(activeSprint, allSprints)}` : ""}
               </button>
               <button
                 type="button"

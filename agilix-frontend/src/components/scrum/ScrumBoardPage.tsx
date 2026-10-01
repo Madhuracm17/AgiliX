@@ -18,6 +18,7 @@ import {
   nextStatus,
   priorityLabel,
   readError,
+  sprintLabel,
   statusLabel,
   typeLabel,
 } from "./taskDisplay";
@@ -234,7 +235,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
           <label>Sprint name</label>
           <input
             type="text"
-            placeholder="Sprint 1"
+            placeholder="e.g. Login page"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -308,7 +309,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                 }`}
                 onClick={() => setSelectedSprintId(sprint._id)}
               >
-                {sprint.name}
+                {sprintLabel(sprint, sprints)}
                 <SprintStatusBadge status={sprint.status} />
               </button>
             ))}

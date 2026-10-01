@@ -11,6 +11,7 @@ import {
   priorityLabel,
   readError,
   sameId,
+  sprintLabel,
   timeAgo,
 } from "../scrum/taskDisplay";
 import "./ProjectDashboard.css";
@@ -188,7 +189,9 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
             <div className="dash-panel-header">
               <h2>Sprint Health</h2>
               {activeSprint && (
-                <span className="dash-sprint-name">{activeSprint.name}</span>
+                <span className="dash-sprint-name">
+                  {sprintLabel(activeSprint, sprints)}
+                </span>
               )}
             </div>
 
@@ -358,21 +361,21 @@ function buildActivity(tasks: Task[], sprints: Sprint[]): Activity[] {
     if (sprint.completedAt) {
       items.push({
         key: `sc-${sprint._id}`,
-        text: `${sprint.name} completed`,
+        text: `${sprintLabel(sprint, sprints)} completed`,
         at: sprint.completedAt,
       });
     }
     if (sprint.startedAt) {
       items.push({
         key: `ss-${sprint._id}`,
-        text: `${sprint.name} started`,
+        text: `${sprintLabel(sprint, sprints)} started`,
         at: sprint.startedAt,
       });
     }
     if (sprint.createdAt) {
       items.push({
         key: `sp-${sprint._id}`,
-        text: `${sprint.name} planned`,
+        text: `${sprintLabel(sprint, sprints)} planned`,
         at: sprint.createdAt,
       });
     }
