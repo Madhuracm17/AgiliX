@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -12,7 +21,15 @@ export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Post()
-  create(@Body() dto: CreateTaskDto) {
+  create(@Body() dto: CreateTaskDto, @CurrentUser() user: AuthUser) {
+    // Admins and managers can assign a task to any team member. Developers and
+    // testers can create tasks for themselves (or leave them unassigned).
+    const canAssignOthers = user.role === UserRole.ADMIN || user.role === UserRole.MANAGER;
+    if (dto.assignee && !canAssignOthers && dto.assignee !== user.userId) {
+      throw new ForbiddenException(
+        'You do not have permission to assign tasks to other people. Please contact a manager or an admin.',
+      );
+    }
     return this.tasksService.create(dto);
   }
 

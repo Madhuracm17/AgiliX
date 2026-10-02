@@ -1,0 +1,96 @@
+.pcard {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+
+.pcard-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pcard-status {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fff4d6;
+  color: #946200;
+}
+
+.pcard-status-active {
+  background: #e6ebe0;
+  color: #5f6d52;
+}
+
+.pcard-method {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #4a4f46;
+}
+
+.pcard-summary {
+  margin: 8px 0 16px;
+  color: #7d8172;
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 42px;
+}
+
+.pcard-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #4a4f46;
+  margin-bottom: 6px;
+}
+
+.pcard-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: #ece6d8;
+  overflow: hidden;
+}
+
+.pcard-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #c4a04d;
+}
+
+.pcard-people {
+  display: flex;
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #efeadd;
+}
+
+.pcard-avatar,
+.pcard-more {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  border: 2px solid white;
+  margin-right: -6px;
+  background: #eef1ea;
+  color: #5f6d52;
+}
+
+.pcard-more {
+  margin-left: 10px;
+  margin-right: 0;
+  background: transparent;
+  border-color: transparent;
+  color: #7d8172;
+  font-weight: 600;
+  font-size: 12px;
+}

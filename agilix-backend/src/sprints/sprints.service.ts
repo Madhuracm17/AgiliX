@@ -131,7 +131,18 @@ export class SprintsService {
     const tasks = this.taskModel.collection;
 
     const sprintTasks = await tasks
-      .find(inThisSprint, { projection: { status: 1, storyPoints: 1 } })
+      .find(inThisSprint, {
+        projection: {
+          title: 1,
+          status: 1,
+          storyPoints: 1,
+          assignee: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          completedAt: 1,
+          addedToSprintAt: 1,
+        },
+      })
       .toArray();
     const committed = sprintTasks.reduce((sum, t) => sum + (Number(t.storyPoints) || 0), 0);
     const completed = sprintTasks
@@ -141,13 +152,29 @@ export class SprintsService {
     // Stored as text, the same way the rest of the app saves the sprint link.
     const moved = await tasks.updateMany(
       { ...inThisSprint, status: { $ne: TaskStatus.DONE } },
-      { $set: { sprint: target ? String(target._id) : null, updatedAt: new Date() } },
+      {
+        $set: {
+          sprint: target ? String(target._id) : null,
+          addedToSprintAt: target ? new Date() : null,
+          updatedAt: new Date(),
+        },
+      },
     );
 
     sprint.status = SprintStatus.COMPLETED;
     sprint.completedAt = new Date();
     sprint.committedStoryPoints = committed;
     sprint.completedStoryPoints = completed;
+    sprint.snapshot = sprintTasks.map((t) => ({
+      taskId: String(t._id),
+      title: t.title,
+      status: t.status,
+      storyPoints: Number(t.storyPoints) || 0,
+      assignee: t.assignee ? String(t.assignee) : null,
+      addedAt: t.addedToSprintAt ?? t.createdAt ?? null,
+      doneAt:
+        t.status === TaskStatus.DONE ? (t.completedAt ?? t.updatedAt ?? null) : null,
+    }));
     await sprint.save();
 
     return {

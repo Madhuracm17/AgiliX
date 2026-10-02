@@ -1,0 +1,22 @@
+/* ---- Dashboard layout: no sidebar, Figma-style top bar ---- */
+
+.topbar-dashboard {
+  gap: 24px;
+}
+
+.topbar-logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.app-shell-bare .page-content {
+  max-width: 1280px;
+}
+
+@media (max-width: 600px) {
+  .topbar-dashboard {
+    padding: 0 16px;
+    gap: 12px;
+  }
+}

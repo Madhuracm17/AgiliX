@@ -17,7 +17,8 @@ import {
 import "./ProjectDashboard.css";
 
 interface ProjectDashboardProps {
-  project: { _id: string; name: string; description?: string };
+  /** Every project the signed-in person belongs to. */
+  projects: { _id: string; name: string }[];
 }
 
 interface Activity {
@@ -27,15 +28,15 @@ interface Activity {
 }
 
 /**
- * Scrum project dashboard (Figma "Dashboard" screen): task totals,
- * sprint health for the active sprint, recent activity and the logged-in
- * user's own tasks. The AI confidence figure comes from the existing
- * AI sprint-risk endpoint and is only requested when the user asks.
+ * Dashboard (Figma "Dashboard" screen), the first page after login. It adds up
+ * the person's projects: task totals, sprint health for the active sprint,
+ * recent activity and their own tasks. The AI confidence figure comes from the
+ * existing AI sprint-risk endpoint and is only requested when the user asks.
  */
-export default function ProjectDashboard({ project }: ProjectDashboardProps) {
+export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const projectId = project._id;
+  const projectKey = projects.map((p) => p._id).join(",");
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -53,13 +54,15 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
       try {
         setLoading(true);
         setError("");
-        const [taskData, sprintData] = await Promise.all([
-          getTasks(projectId),
-          getSprints(projectId),
-        ]);
+        const results = await Promise.all(
+          projects.map(async (project) => ({
+            tasks: await getTasks(project._id),
+            sprints: await getSprints(project._id),
+          })),
+        );
         if (cancelled) return;
-        setTasks(taskData);
-        setSprints(sprintData);
+        setTasks(results.flatMap((r) => r.tasks));
+        setSprints(results.flatMap((r) => r.sprints));
       } catch (err) {
         if (!cancelled) setError(readError(err, "Failed to load the dashboard"));
       } finally {
@@ -71,7 +74,7 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectKey]);
 
   const activeSprint = sprints.find((s) => s.status === "active") ?? null;
 
@@ -98,21 +101,32 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
 
   const activity = useMemo(() => buildActivity(tasks, sprints), [tasks, sprints]);
 
-  // My tasks: in the active sprint if there is one, otherwise anywhere in
-  // the project. Unfinished first, highest priority first.
+  // My tasks: everything assigned to me in this project. Unfinished first,
+  // then tasks in the active sprint, then highest priority.
   const myTasks = useMemo(() => {
     const rank = { high: 0, medium: 1, low: 2 } as const;
+    const inActive = (t: Task) =>
+      activeSprint && sameId(t.sprint, activeSprint._id) ? 0 : 1;
     return tasks
       .filter((t) => sameId(t.assignee, user._id))
-      .filter((t) => !activeSprint || sameId(t.sprint, activeSprint._id))
       .sort((a, b) => {
         const doneA = a.status === "done" ? 1 : 0;
         const doneB = b.status === "done" ? 1 : 0;
         if (doneA !== doneB) return doneA - doneB;
+        if (inActive(a) !== inActive(b)) return inActive(a) - inActive(b);
         return rank[a.priority] - rank[b.priority];
       })
       .slice(0, 6);
   }, [tasks, user._id, activeSprint]);
+
+  // Where a task sits, shown under its title.
+  const taskPlace = (task: Task) => {
+    if (activeSprint && sameId(task.sprint, activeSprint._id)) {
+      return `Sprint ends in ${daysLeft(activeSprint.endDate)} days`;
+    }
+    const sprint = sprints.find((s) => sameId(task.sprint, s._id));
+    return sprint ? label(sprint) : "In the backlog";
+  };
 
   const checkConfidence = async () => {
     if (!activeSprint || checkingRisk) return;
@@ -128,13 +142,19 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
     }
   };
 
-  const go = (path: string) => navigate(`/projects/${projectId}${path}`);
+  // Sprint numbers ("Sprint 2") count within one project.
+  const label = (sprint: Sprint) =>
+    sprintLabel(
+      sprint,
+      sprints.filter((s) => sameId(s.project, sprint.project)),
+    );
+  const projectName = (sprint: Sprint) =>
+    projects.find((p) => sameId(sprint.project, p._id))?.name;
 
   return (
     <div className="dash">
       <div className="page-header">
         <div>
-          <p className="eyebrow">DASHBOARD · {project.name.toUpperCase()}</p>
           <h1>Dashboard</h1>
           <p className="page-description">
             {greeting()}, {user.name}!
@@ -145,24 +165,6 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
           All Projects
         </button>
       </div>
-
-      <nav className="dash-links" aria-label="Project pages">
-        <button className="primary-button" onClick={() => go("/sprints")}>
-          Scrum Board
-        </button>
-        <button className="secondary-button" onClick={() => go("/backlog")}>
-          Product Backlog
-        </button>
-        <button className="secondary-button" onClick={() => go("/ai-insights")}>
-          AI Insights
-        </button>
-        <button className="secondary-button" onClick={() => go("/reports")}>
-          Reports
-        </button>
-        <button className="secondary-button" onClick={() => go("/team")}>
-          Team
-        </button>
-      </nav>
 
       {loading && (
         <div className="empty-state">
@@ -190,7 +192,7 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
               <h2>Sprint Health</h2>
               {activeSprint && (
                 <span className="dash-sprint-name">
-                  {sprintLabel(activeSprint, sprints)}
+                  {[projectName(activeSprint), label(activeSprint)].filter(Boolean).join(" · ")}
                 </span>
               )}
             </div>
@@ -198,8 +200,8 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
             {!activeSprint ? (
               <div className="dash-empty">
                 <p>No active sprint right now.</p>
-                <button className="secondary-button" onClick={() => go("/sprints")}>
-                  Open Scrum Board
+                <button className="secondary-button" onClick={() => navigate("/projects")}>
+                  Open All Projects
                 </button>
               </div>
             ) : (
@@ -288,11 +290,7 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
               <div className="dash-card">
                 <h3>My Tasks Today</h3>
                 {myTasks.length === 0 ? (
-                  <p className="dash-muted">
-                    {activeSprint
-                      ? "No tasks assigned to you in this sprint."
-                      : "No tasks assigned to you yet."}
-                  </p>
+                  <p className="dash-muted">Tasks assigned to you will appear here.</p>
                 ) : (
                   <ul className="dash-my-tasks">
                     {myTasks.map((task) => (
@@ -302,9 +300,7 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
                             {task.title}
                           </strong>
                           <span>
-                            {activeSprint
-                              ? `Sprint ends in ${daysLeft(activeSprint.endDate)} days`
-                              : "Not in a sprint"}
+                            {taskPlace(task)}
                             {" · "}
                             {task.storyPoints ?? 0} pts
                           </span>
@@ -361,21 +357,21 @@ function buildActivity(tasks: Task[], sprints: Sprint[]): Activity[] {
     if (sprint.completedAt) {
       items.push({
         key: `sc-${sprint._id}`,
-        text: `${sprintLabel(sprint, sprints)} completed`,
+        text: `${sprintLabel(sprint, sprints.filter((s) => sameId(s.project, sprint.project)))} completed`,
         at: sprint.completedAt,
       });
     }
     if (sprint.startedAt) {
       items.push({
         key: `ss-${sprint._id}`,
-        text: `${sprintLabel(sprint, sprints)} started`,
+        text: `${sprintLabel(sprint, sprints.filter((s) => sameId(s.project, sprint.project)))} started`,
         at: sprint.startedAt,
       });
     }
     if (sprint.createdAt) {
       items.push({
         key: `sp-${sprint._id}`,
-        text: `${sprintLabel(sprint, sprints)} planned`,
+        text: `${sprintLabel(sprint, sprints.filter((s) => sameId(s.project, sprint.project)))} planned`,
         at: sprint.createdAt,
       });
     }

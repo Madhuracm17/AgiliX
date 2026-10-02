@@ -5,6 +5,16 @@ export function canManageSprints(role: string | undefined): boolean {
   return role === "admin" || role === "manager";
 }
 
+/** Review → Done is the tester's sign-off (also managers and admins). */
+export function canMarkDone(role: string | undefined): boolean {
+  return role === "tester" || role === "manager" || role === "admin";
+}
+
+/** Changing a task's priority or assignee after it exists: managers and admins. */
+export function canEditTaskPlan(role: string | undefined): boolean {
+  return role === "manager" || role === "admin";
+}
+
 /** Board columns of the Scrum Board, in order. */
 export const SCRUM_COLUMNS: { key: TaskStatus; label: string }[] = [
   { key: "todo", label: "To Do" },

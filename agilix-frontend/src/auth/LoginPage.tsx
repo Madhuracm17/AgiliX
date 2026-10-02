@@ -3,6 +3,7 @@ import { login, register } from "../api/auth";
 import type { User } from "../api/users";
 
 type Mode = "login" | "register";
+type SignUpRole = "developer" | "tester" | "manager" | "admin";
 
 interface LoginPageProps {
   /** Called after a successful login (or sign-up + login). */
@@ -17,11 +18,13 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"developer" | "tester">("developer");
+  const [role, setRole] = useState<SignUpRole>("developer");
+  const [accessCode, setAccessCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   const isRegister = mode === "register";
+  const needsCode = role === "manager" || role === "admin";
 
   const switchMode = (next: Mode) => {
     setMode(next);
@@ -45,12 +48,23 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
       return;
     }
 
+    if (isRegister && needsCode && !accessCode.trim()) {
+      setError("Please enter the access code for this role.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
     try {
       if (isRegister) {
-        await register({ name: trimmedName, email: trimmedEmail, password, role });
+        await register({
+          name: trimmedName,
+          email: trimmedEmail,
+          password,
+          role,
+          accessCode: needsCode ? accessCode.trim() : undefined,
+        });
       }
       const result = await login(trimmedEmail, password);
       onLoggedIn(result.accessToken, result.user);
@@ -107,11 +121,26 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
             <select
               id="auth-role"
               value={role}
-              onChange={(e) => setRole(e.target.value as "developer" | "tester")}
+              onChange={(e) => setRole(e.target.value as SignUpRole)}
             >
               <option value="developer">Developer</option>
               <option value="tester">Tester</option>
+              <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
             </select>
+            {needsCode && (
+              <>
+                <label htmlFor="auth-code">Access code</label>
+                <input
+                  id="auth-code"
+                  type="password"
+                  autoComplete="off"
+                  placeholder="Given by your organisation"
+                  value={accessCode}
+                  onChange={(e) => setAccessCode(e.target.value)}
+                />
+              </>
+            )}
           </>
         )}
 

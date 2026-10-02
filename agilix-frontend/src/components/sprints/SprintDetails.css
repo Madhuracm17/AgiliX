@@ -13,8 +13,8 @@
 }
 
 .sprint-status-planned {
-  background: #f3f4f8;
-  color: #626a7a;
+  background: #f0ebde;
+  color: #6b6f62;
 }
 
 .sprint-status-active {
@@ -23,15 +23,15 @@
 }
 
 .sprint-status-completed {
-  background: #eeedff;
-  color: #5148d8;
+  background: #eef1ea;
+  color: #5f6d52;
 }
 
 /* ---- Details bar for the selected sprint ---- */
 
 .sprint-details {
   background: #ffffff;
-  border: 1px solid #e7e9ef;
+  border: 1px solid #e6dfcd;
   border-radius: 14px;
   padding: 18px 20px;
   margin-bottom: 20px;
@@ -63,18 +63,18 @@
 .sprint-details-dates {
   margin: 6px 0 0;
   font-size: 13px;
-  color: #626a7a;
+  color: #6b6f62;
 }
 
 .sprint-details-goal {
   margin: 8px 0 0;
   font-size: 14px;
-  color: #3f4757;
+  color: #4a4f46;
   overflow-wrap: anywhere;
 }
 
 .sprint-details-muted {
-  color: #9299a8;
+  color: #8f9285;
 }
 
 .sprint-details-actions {
@@ -108,7 +108,7 @@
 .sprint-edit-form {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #e7e9ef;
+  border-top: 1px solid #e6dfcd;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -117,14 +117,14 @@
 .sprint-edit-form label {
   font-size: 13px;
   font-weight: 600;
-  color: #3f4757;
+  color: #4a4f46;
   margin-top: 6px;
 }
 
 .sprint-edit-form input,
 .sprint-edit-form textarea {
   width: 100%;
-  border: 1px solid #dfe2e9;
+  border: 1px solid #ddd5c0;
   border-radius: 8px;
   padding: 10px 12px;
   font: inherit;
@@ -134,7 +134,7 @@
 
 .sprint-edit-form input:focus,
 .sprint-edit-form textarea:focus {
-  border-color: #635bff;
+  border-color: #829172;
 }
 
 .sprint-edit-form textarea {
@@ -164,7 +164,7 @@
 
 .sprint-progress {
   background: #ffffff;
-  border: 1px solid #e7e9ef;
+  border: 1px solid #e6dfcd;
   border-radius: 14px;
   padding: 14px 20px;
   margin-bottom: 20px;
@@ -176,31 +176,31 @@
   gap: 12px;
   flex-wrap: wrap;
   font-size: 13px;
-  color: #626a7a;
+  color: #6b6f62;
   margin-bottom: 8px;
 }
 
 .sprint-progress-label strong {
-  color: #172033;
+  color: #30342e;
 }
 
 .sprint-progress-track {
   display: flex;
   height: 10px;
-  background: #eef0f5;
+  background: #ece6d8;
   border-radius: 999px;
   overflow: hidden;
 }
 
 .sprint-progress-fill {
   height: 100%;
-  background: #635bff;
+  background: #829172;
   transition: width 0.3s ease;
 }
 
 .sprint-progress-fill-in-progress {
   height: 100%;
-  background: #c9c6ff;
+  background: #cfd8c6;
   transition: width 0.3s ease;
 }
 
@@ -209,7 +209,7 @@
   gap: 14px;
   margin-top: 8px;
   font-size: 12px;
-  color: #626a7a;
+  color: #6b6f62;
 }
 
 .sprint-progress-legend span {
@@ -226,19 +226,19 @@
 }
 
 .sprint-legend-done {
-  background: #635bff;
+  background: #829172;
 }
 
 .sprint-legend-in-progress {
-  background: #c9c6ff;
+  background: #cfd8c6;
 }
 
 /* ---- Sprint board cards ---- */
 
 .sprint-card-points {
   display: inline-block;
-  background: #f4f3ff;
-  color: #4b43d6;
+  background: #f1f4ed;
+  color: #6f7e61;
   border-radius: 5px;
   padding: 4px 8px;
   font-size: 10px;
@@ -252,17 +252,17 @@
   padding: 4px 8px;
   font-size: 10px;
   font-weight: 600;
-  color: #9299a8;
-  background: #f6f7fb;
+  color: #8f9285;
+  background: #f6f2e8;
 }
 
 .sprint-card-backlog-button {
   width: 100%;
   margin-top: 8px;
-  border: 1px dashed #dfe2e9;
+  border: 1px dashed #ddd5c0;
   border-radius: 7px;
   background: #ffffff;
-  color: #626a7a;
+  color: #6b6f62;
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 600;
@@ -270,8 +270,8 @@
 }
 
 .sprint-card-backlog-button:hover:not(:disabled) {
-  border-color: #c9c6ff;
-  color: #5148d8;
+  border-color: #cfd8c6;
+  color: #5f6d52;
 }
 
 .sprint-card-backlog-button:disabled {
@@ -284,7 +284,7 @@
 .sprint-complete-box {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #e7e9ef;
+  border-top: 1px solid #e6dfcd;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -298,7 +298,7 @@
 .sprint-complete-box p {
   margin: 0;
   font-size: 13px;
-  color: #3f4757;
+  color: #4a4f46;
 }
 
 .sprint-complete-option {
@@ -306,16 +306,16 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid #e7e9ef;
+  border: 1px solid #e6dfcd;
   border-radius: 8px;
   font-size: 13px;
-  color: #3f4757;
+  color: #4a4f46;
   cursor: pointer;
 }
 
 .sprint-complete-option:has(input:checked) {
-  border-color: #c9c6ff;
-  background: #f7f6ff;
+  border-color: #cfd8c6;
+  background: #f4f6f0;
 }
 
 .sprint-complete-hint {

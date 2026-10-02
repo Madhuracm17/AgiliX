@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
+import { timingSafeEqual } from 'crypto';
 import { User, UserDocument, UserRole } from './schemas/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 
@@ -32,6 +34,40 @@ export class UsersService {
     });
     // The schema's toJSON transform removes passwordHash from the API response.
     return created.save();
+  }
+
+  /**
+   * Public sign-up. Developer and tester need nothing extra. Manager and admin
+   * also need an access code that the organisation sets in the backend .env
+   * (MANAGER_SIGNUP_CODE / ADMIN_SIGNUP_CODE), so nobody can make themselves
+   * a manager or admin without it, and nobody has to edit the database.
+   */
+  async signUp(dto: CreateUserDto): Promise<User> {
+    const role = dto.role ?? UserRole.DEVELOPER;
+    if (role === UserRole.ADMIN || role === UserRole.MANAGER) {
+      const expected =
+        role === UserRole.ADMIN
+          ? process.env.ADMIN_SIGNUP_CODE
+          : process.env.MANAGER_SIGNUP_CODE;
+      if (!expected) {
+        throw new ForbiddenException(
+          `Sign-up as ${role} is not enabled. Please contact an admin to create the account for you.`,
+        );
+      }
+      if (!this.sameCode(dto.accessCode ?? '', expected)) {
+        throw new ForbiddenException(
+          `The access code is not correct. Please check it with your organisation.`,
+        );
+      }
+    }
+    const { accessCode: _ignored, ...rest } = dto;
+    return this.create({ ...rest, role });
+  }
+
+  private sameCode(given: string, expected: string): boolean {
+    const a = Buffer.from(given);
+    const b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 
   async findAll(): Promise<User[]> {

@@ -9,6 +9,7 @@ import { AiModule } from './ai/ai.module';
 import { TimeEntriesModule } from './time-entries/time-entries.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AuthModule } from './auth/auth.module';
     TimeEntriesModule,
     AnalyticsModule,
     AuthModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}

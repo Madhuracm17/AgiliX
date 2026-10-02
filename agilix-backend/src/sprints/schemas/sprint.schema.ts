@@ -48,6 +48,13 @@ export class Sprint {
   @Prop({ type: Number, default: null })
   completedStoryPoints: number | null;
 
+  // Copy of the sprint's tasks taken when it is completed, because unfinished
+  // tasks move on to another sprint. The Scrum reports (burndown, burnup,
+  // sprint report) read this for completed sprints. Empty for sprints that were
+  // completed before this existed.
+  @Prop({ type: [Object], default: [] })
+  snapshot: Record<string, unknown>[];
+
   // Points/day the team has historically completed, used as an input
   // to the AI sprint-risk prediction (see ai/ai.service.ts)
   @Prop({ default: 0 })

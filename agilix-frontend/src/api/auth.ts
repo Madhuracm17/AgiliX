@@ -13,7 +13,9 @@ export interface RegisterData {
   name: string;
   email: string;
   password: string;
-  role?: "developer" | "tester";
+  role?: "developer" | "tester" | "manager" | "admin";
+  /** Needed only when signing up as manager or admin. */
+  accessCode?: string;
 }
 
 /** Email + password → login token and the user's details. */
@@ -29,7 +31,7 @@ export function getMe() {
   return api<User>("/auth/me");
 }
 
-/** Creates an account. Only developer or tester can be chosen (default developer). */
+/** Creates an account. Manager and admin need an access code (default role developer). */
 export function register(data: RegisterData) {
   return api<User>("/users", {
     method: "POST",

@@ -7,10 +7,10 @@
 }
 
 .sp-estimate-button {
-  border: 1px solid #d9d6ff;
+  border: 1px solid #d6ddcf;
   border-radius: 7px;
-  background: #f4f3ff;
-  color: #4b43d6;
+  background: #f1f4ed;
+  color: #6f7e61;
   padding: 7px 12px;
   font-size: 12px;
   font-weight: 700;
@@ -25,10 +25,10 @@
 
 .sp-panel {
   width: 100%;
-  border: 1px solid #d9d6ff;
-  border-left: 4px solid #635bff;
+  border: 1px solid #d6ddcf;
+  border-left: 4px solid #829172;
   border-radius: 10px;
-  background: #fafaff;
+  background: #f7f8f4;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -38,16 +38,16 @@
 .sp-panel p {
   margin: 0;
   font-size: 12px;
-  color: #3f4757;
+  color: #4a4f46;
 }
 
 .sp-panel .sp-estimate {
   font-size: 14px;
-  color: #172033;
+  color: #30342e;
 }
 
 .sp-panel .sp-estimate strong {
-  color: #4b43d6;
+  color: #6f7e61;
   font-size: 16px;
 }
 
@@ -56,7 +56,7 @@
 }
 
 .sp-panel .sp-saved {
-  color: #626a7a;
+  color: #6b6f62;
 }
 
 .sp-panel .sp-stale,
@@ -70,11 +70,11 @@
   gap: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: #3f4757;
+  color: #4a4f46;
 }
 
 .sp-select {
-  border: 1px solid #dfe2e9;
+  border: 1px solid #ddd5c0;
   border-radius: 7px;
   padding: 6px 8px;
   font: inherit;
@@ -112,7 +112,7 @@
   border: 0;
   background: none;
   padding: 0;
-  color: #635bff;
+  color: #5f6d52;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -124,8 +124,8 @@
 
 .sp-points-badge {
   display: inline-block;
-  background: #f4f3ff;
-  color: #4b43d6;
+  background: #f1f4ed;
+  color: #6f7e61;
   border-radius: 5px;
   padding: 4px 8px;
   font-size: 10px;

@@ -54,6 +54,16 @@ export class Task {
   @Prop({ default: 0 })
   storyPoints: number;
 
+  // When the task last reached Done (null while it is not Done). Used by the
+  // Scrum burndown/burnup. Older tasks simply have no value.
+  @Prop({ type: Date, default: null })
+  completedAt?: Date | null;
+
+  // When the task was put into its current sprint. Tasks added after the
+  // sprint started count as scope changes in the reports.
+  @Prop({ type: Date, default: null })
+  addedToSprintAt?: Date | null;
+
   // Optional: older tasks simply have no type.
   @Prop({ type: String, enum: TaskType })
   type?: TaskType;
