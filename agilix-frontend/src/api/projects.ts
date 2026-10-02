@@ -7,6 +7,7 @@ export interface Project {
   description?: string;
   owner: User;
   members: User[];
+  methodology?: "scrum" | "kanban";
   createdAt?: string;
   updatedAt?: string;
 }

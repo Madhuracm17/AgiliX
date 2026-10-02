@@ -90,3 +90,73 @@ export function suggestTasks(projectId: string) {
     body: JSON.stringify({ projectId }),
   });
 }
+
+// ---- AI Kanban Insights ----
+
+export type KanbanStage = "todo" | "in_progress" | "review" | "done";
+export type KanbanHealth = "healthy" | "attention" | "critical";
+
+export interface KanbanWorkflow {
+  reviewEnabled: boolean;
+  /** Stages in board order. */
+  stages: KanbanStage[];
+  /** Where the Review setting came from: the caller, the project, or inferred from task statuses. */
+  source: "request" | "project" | "inferred";
+}
+
+/** Calculated by the backend from current data — never produced by the AI. */
+export interface KanbanMetrics {
+  totalTasks: number;
+  todo: number;
+  inProgress: number;
+  /** null when the board has no Review stage. */
+  review: number | null;
+  done: number;
+  outsideWorkflow: number;
+  open: number;
+  workInProgress: number;
+  donePercent: number;
+  priority: {
+    open: Record<TaskPriority, number>;
+    highNotStarted: number;
+  };
+  storyPoints: { total: number; done: number; open: number; unestimatedOpenTasks: number } | null;
+  assignment: {
+    assigned: number;
+    unassigned: number;
+    unassignedOpen: number;
+    busiest: { name: string; wip: number; open: number }[];
+  };
+  staleWork: {
+    thresholdDays: number;
+    count: number;
+    tasks: { title: string; status: KanbanStage; daysSinceUpdate: number }[];
+  };
+}
+
+/** The AI's interpretation of the metrics. */
+export interface KanbanAiAnalysis {
+  health: KanbanHealth;
+  summary: string;
+  bottlenecks: { stage: KanbanStage; reason: string }[];
+  recommendations: string[];
+}
+
+export interface KanbanInsights {
+  projectId: string;
+  generatedAt: string;
+  workflow: KanbanWorkflow;
+  metrics: KanbanMetrics;
+  limitations: string[];
+  analysis: KanbanAiAnalysis;
+}
+
+/**
+ * AI analysis of a Kanban project's board. Read-only.
+ * Pass `reviewEnabled` when the board's Review setting is known; otherwise the
+ * backend uses the project's setting or infers it from the task statuses.
+ */
+export function getKanbanInsights(projectId: string, reviewEnabled?: boolean) {
+  const query = reviewEnabled === undefined ? "" : `?review=${reviewEnabled}`;
+  return api<KanbanInsights>(`/ai/kanban-insights/${projectId}${query}`);
+}

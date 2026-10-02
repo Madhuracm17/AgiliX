@@ -18,6 +18,8 @@ import "./components/team/team.css";
 import { readError } from "./components/scrum/taskDisplay";
 import { getSprints, type Sprint } from "./api/sprints";
 import { getSprintRisk, type SprintRisk } from "./api/ai";
+import { getProject } from "./api/projects";
+import KanbanInsights from "./components/ai/KanbanInsights";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
@@ -1109,6 +1111,7 @@ function AiInsightsPage() {
   const navigate = useNavigate();
 
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [methodology, setMethodology] = useState<"scrum" | "kanban">("scrum");
   const [selectedSprintId, setSelectedSprintId] = useState("");
   const [risk, setRisk] = useState<SprintRisk | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1123,9 +1126,16 @@ function AiInsightsPage() {
         setLoading(true);
         setError("");
 
+        const [project, allSprints] = await Promise.all([
+          getProject(projectId),
+          getSprints(projectId),
+        ]);
+        // Kanban projects get AI Kanban Insights instead of Sprint Risk.
+        setMethodology(project.methodology === "kanban" ? "kanban" : "scrum");
+
         // Completed sprints have no remaining work to forecast (the backend
         // rejects them), so only planned and active sprints can be checked.
-        const data = (await getSprints(projectId)).filter(
+        const data = allSprints.filter(
           (sprint) => sprint.status !== "completed"
         );
         setSprints(data);
@@ -1158,6 +1168,29 @@ function AiInsightsPage() {
       setChecking(false);
     }
   };
+
+  if (!loading && !error && methodology === "kanban" && projectId) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <p
+              className="eyebrow breadcrumb-link"
+              onClick={() => navigate(`/projects/${projectId}`)}
+            >
+              ← Back to project
+            </p>
+            <h1>AI Insights</h1>
+            <p className="page-description">
+              AI analysis of this Kanban board's current state.
+            </p>
+          </div>
+        </div>
+
+        <KanbanInsights projectId={projectId} />
+      </div>
+    );
+  }
 
   return (
     <div>
