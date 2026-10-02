@@ -5,19 +5,19 @@ plumbing + the AI sprint-risk centerpiece.
 
 ## Structure
 
-```
+```text
 src/
   users/        User accounts + roles (admin/manager/developer)
   projects/     Projects, ownership, members
   tasks/        Kanban tasks — status, priority, backlog vs sprint assignment
   sprints/      Sprint creation + date range + team velocity
-  ai/           AI sprint-risk prediction (Claude API call, structured JSON out)
+  ai/           AI sprint-risk prediction (OpenRouter API call, structured JSON out)
 ```
 
 ## Setup
 
 ```bash
-cp .env.example .env      # fill in MONGODB_URI and ANTHROPIC_API_KEY
+cp .env.example .env      # fill in MONGODB_URI and OPENROUTER_API_KEY
 npm install
 npm run start:dev
 ```
@@ -32,7 +32,7 @@ Requires a running MongoDB instance (local or Atlas).
    (`PATCH /tasks/:id/sprint/:sprintId`).
 4. Move tasks across the board (`PATCH /tasks/:id` with `status`).
 5. Pull sprint stats for burndown/velocity charts (`GET /tasks/sprint/:sprintId/stats`).
-6. Get the AI risk verdict (`GET /ai/sprint-risk/:sprintId`) — calls Claude with
+6. Get the AI risk verdict (`GET /ai/sprint-risk/:sprintId`) — calls OpenRouter with
    the sprint's progress/timing/velocity and returns
    `{ risk: green|yellow|red, reasoning, completionForecastPercent }`.
 
@@ -108,18 +108,18 @@ double backslashes), then restart Claude Desktop:
 1. Create `src/mcp/tools/<name>.tool.ts`:
 
 ```ts
-   import { z } from 'zod';
-   import { ProjectsService } from '../../projects/projects.service';
-   import { defineMcpTool } from '../mcp-tool.types';
+import { z } from 'zod';
+import { ProjectsService } from '../../projects/projects.service';
+import { defineMcpTool } from '../mcp-tool.types';
 
-   export const getProjectTool = defineMcpTool({
-     name: 'get_project',
-     title: 'Get project',
-     description: 'Returns one AgiliX project by id.',
-     inputSchema: { projectId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid project id') },
-     readOnly: true,
-     handler: ({ projectId }, ctx) => ctx.get(ProjectsService).findOne(projectId),
-   });
+export const getProjectTool = defineMcpTool({
+  name: 'get_project',
+  title: 'Get project',
+  description: 'Returns one AgiliX project by id.',
+  inputSchema: { projectId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid project id') },
+  readOnly: true,
+  handler: ({ projectId }, ctx) => ctx.get(ProjectsService).findOne(projectId),
+});
 ```
 
 2. Add it to `MCP_TOOLS` in `src/mcp/tools/index.ts`.
