@@ -15,6 +15,9 @@ import ScrumBoardPage from "./components/scrum/ScrumBoardPage";
 import NewTaskPage from "./components/scrum/NewTaskPage";
 import ProjectTeamPage from "./components/team/ProjectTeamPage";
 import "./components/team/team.css";
+import { readError } from "./components/scrum/taskDisplay";
+import { getSprints, type Sprint } from "./api/sprints";
+import { getSprintRisk, type SprintRisk } from "./api/ai";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
@@ -45,22 +48,6 @@ type Task = {
   assignee?: User | null;
   storyPoints?: number;
   type?: string | null;
-};
-
-type Sprint = {
-  _id: string;
-  name: string;
-  project: string;
-  goal?: string;
-  startDate: string;
-  endDate: string;
-  status: string;
-};
-
-type SprintRisk = {
-  risk: "green" | "yellow" | "red";
-  reasoning: string;
-  completionForecastPercent: number;
 };
 
 type MemberWorkload = {
@@ -1134,23 +1121,19 @@ function AiInsightsPage() {
 
       try {
         setLoading(true);
+        setError("");
 
-        const response = await fetch(
-          `${API_URL}/sprints?project=${projectId}`
+        // Completed sprints have no remaining work to forecast (the backend
+        // rejects them), so only planned and active sprints can be checked.
+        const data = (await getSprints(projectId)).filter(
+          (sprint) => sprint.status !== "completed"
         );
-
-        if (!response.ok) {
-          throw new Error("Failed to load sprints");
-        }
-
-        const data = await response.json();
         setSprints(data);
 
-        if (data.length > 0) {
-          setSelectedSprintId(data[0]._id);
-        }
+        const active = data.find((sprint) => sprint.status === "active");
+        setSelectedSprintId(active?._id ?? data[0]?._id ?? "");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Something went wrong");
+        setError(readError(err, "Failed to load sprints"));
       } finally {
         setLoading(false);
       }
@@ -1165,18 +1148,12 @@ function AiInsightsPage() {
     try {
       setChecking(true);
       setError("");
-
-      const response = await fetch(
-        `${API_URL}/ai/sprint-risk/${selectedSprintId}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to get AI risk prediction");
-      }
-
-      setRisk(await response.json());
+      setRisk(null);
+      setRisk(await getSprintRisk(selectedSprintId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      // Shows the backend's own message (e.g. the 503 "AI service is
+      // temporarily unavailable…" text) instead of a generic one.
+      setError(readError(err, "Failed to get AI risk prediction"));
     } finally {
       setChecking(false);
     }
@@ -1205,10 +1182,13 @@ function AiInsightsPage() {
         </div>
       )}
 
-      {!loading && sprints.length === 0 && (
+      {!loading && !error && sprints.length === 0 && (
         <div className="empty-state">
-          <h2>No sprints yet</h2>
-          <p>Create a sprint first to run a risk check.</p>
+          <h2>No planned or active sprint</h2>
+          <p>
+            Create or start a sprint to run a risk check. Completed sprints
+            can't be checked because they have no remaining work.
+          </p>
         </div>
       )}
 
@@ -1225,6 +1205,7 @@ function AiInsightsPage() {
             {sprints.map((sprint) => (
               <option key={sprint._id} value={sprint._id}>
                 {sprint.name}
+                {sprint.status === "active" ? " · Active" : " · Planned"}
               </option>
             ))}
           </select>
