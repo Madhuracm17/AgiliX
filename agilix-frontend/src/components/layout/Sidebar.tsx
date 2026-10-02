@@ -7,7 +7,7 @@ const links = [
 ];
 
 export default function Sidebar() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   return (
     <aside className="sidebar">
@@ -38,9 +38,6 @@ export default function Sidebar() {
           <strong title={user.email}>{user.name}</strong>
           <span>{user.role}</span>
         </div>
-        <button type="button" className="sidebar-logout" onClick={logout}>
-          Log out
-        </button>
       </div>
     </aside>
   );

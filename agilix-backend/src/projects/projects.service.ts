@@ -51,7 +51,7 @@ export class ProjectsService {
     const access = await this.projectModel.findById(id).select('owner members').lean().exec();
     if (!access) throw new NotFoundException('Project not found');
     if (user && user.role !== UserRole.ADMIN && !belongsTo(access, user.userId)) {
-      throw new ForbiddenException('You are not a member of this project');
+      throw new ForbiddenException('You do not have access to this project. Please ask an admin to add you to the team.');
     }
     const project = await this.projectModel.findById(id).populate('owner members', 'name email');
     if (!project) throw new NotFoundException('Project not found');

@@ -1,10 +1,16 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Task, TaskDocument, TaskStatus } from './schemas/task.schema';
 import { Sprint, SprintDocument, SprintStatus } from '../sprints/schemas/sprint.schema';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { UserRole } from '../users/schemas/user.schema';
 
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 
@@ -15,6 +21,9 @@ const SPRINT_STATUS_FLOW: TaskStatus[] = [
   TaskStatus.REVIEW,
   TaskStatus.DONE,
 ];
+
+// Sign-off: only these roles may move a sprint task from Review to Done.
+const CAN_MARK_DONE: UserRole[] = [UserRole.TESTER, UserRole.MANAGER, UserRole.ADMIN];
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   [TaskStatus.TODO]: 'To Do',
@@ -49,9 +58,10 @@ export class TasksService {
     return this.taskModel.find({ sprint: sprintId }).populate('assignee', 'name email').exec();
   }
 
-  async update(id: string, dto: UpdateTaskDto) {
+  /** `role` is left out by internal callers (the AI services), which skip the sign-off check. */
+  async update(id: string, dto: UpdateTaskDto, role?: UserRole) {
     if (dto.status !== undefined) {
-      await this.checkStatusFlow(id, dto.status);
+      await this.checkStatusFlow(id, dto.status, role);
     }
 
     const task = await this.taskModel.findByIdAndUpdate(id, dto, { new: true });
@@ -64,7 +74,7 @@ export class TasksService {
    * Review → Done, one step at a time. Tasks without a sprint (backlog and
    * Kanban tasks) are not affected, so the Kanban board works as before.
    */
-  private async checkStatusFlow(id: string, status: TaskStatus) {
+  private async checkStatusFlow(id: string, status: TaskStatus, role?: UserRole) {
     if (!OBJECT_ID_PATTERN.test(id)) {
       throw new BadRequestException('Invalid task id');
     }
@@ -83,6 +93,9 @@ export class TasksService {
       throw new BadRequestException(
         `Sprint tasks move one step at a time: ${STATUS_LABELS[current.status]} → ${STATUS_LABELS[next]}.`,
       );
+    }
+    if (status === TaskStatus.DONE && role && !CAN_MARK_DONE.includes(role)) {
+      throw new ForbiddenException('A task can only be marked Done by a tester, manager or admin. Please ask a tester to review it.');
     }
   }
 

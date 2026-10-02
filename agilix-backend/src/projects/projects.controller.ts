@@ -13,7 +13,7 @@ export class ProjectsController {
   /** Admins only. The admin who creates the project becomes its owner. */
   @Post()
   create(@Body() dto: CreateProjectDto, @CurrentUser() user: AuthUser) {
-    requireRole(user, 'Only admins can create projects', UserRole.ADMIN);
+    requireRole(user, 'You do not have permission to create projects. Please contact an admin.', UserRole.ADMIN);
     return this.projectsService.create(dto, user.userId);
   }
 
@@ -35,7 +35,7 @@ export class ProjectsController {
     @Param('userId') userId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    requireRole(user, 'Only admins can choose team members', UserRole.ADMIN);
+    requireRole(user, 'You do not have permission to manage team members. Please contact an admin.', UserRole.ADMIN);
     return this.projectsService.addMember(id, userId);
   }
 
@@ -46,7 +46,7 @@ export class ProjectsController {
     @Param('userId') userId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    requireRole(user, 'Only admins can choose team members', UserRole.ADMIN);
+    requireRole(user, 'You do not have permission to manage team members. Please contact an admin.', UserRole.ADMIN);
     return this.projectsService.removeMember(id, userId);
   }
 }

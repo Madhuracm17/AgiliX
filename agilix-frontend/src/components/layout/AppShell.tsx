@@ -1,10 +1,8 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import { initialOf, useAuth } from "../../auth/auth-context";
+import ProfileMenu from "./ProfileMenu";
 
 export default function AppShell() {
-  const { user } = useAuth();
-
   return (
     <div className="app-shell">
       <Sidebar />
@@ -19,9 +17,7 @@ export default function AppShell() {
 
           <div className="topbar-actions">
             <button className="icon-button">?</button>
-            <div className="topbar-avatar" title={user.name}>
-              {initialOf(user.name)}
-            </div>
+            <ProfileMenu />
           </div>
         </header>
 

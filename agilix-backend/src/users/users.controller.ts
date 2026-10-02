@@ -28,7 +28,7 @@ export class UsersController {
   /** Admins only: change someone's role (admin, manager, developer or tester). */
   @Patch(':id/role')
   setRole(@Param('id') id: string, @Body() dto: UpdateRoleDto, @CurrentUser() user: AuthUser) {
-    requireRole(user, 'Only admins can change roles', UserRole.ADMIN);
+    requireRole(user, 'You do not have permission to change roles. Please contact an admin.', UserRole.ADMIN);
     return this.usersService.setRole(id, dto.role, user.userId);
   }
 

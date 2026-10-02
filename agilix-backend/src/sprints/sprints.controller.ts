@@ -8,7 +8,7 @@ import { AuthUser } from '../auth/jwt-config';
 import { requireRole } from '../auth/roles';
 import { UserRole } from '../users/schemas/user.schema';
 
-const SPRINT_MESSAGE = 'Only admins and managers can manage sprints';
+const SPRINT_MESSAGE = 'You do not have permission to manage sprints. Please contact a manager or an admin.';
 
 @Controller('sprints')
 export class SprintsController {
