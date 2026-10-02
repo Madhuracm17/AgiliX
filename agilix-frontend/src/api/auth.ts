@@ -13,6 +13,7 @@ export interface RegisterData {
   name: string;
   email: string;
   password: string;
+  role?: "developer" | "tester";
 }
 
 /** Email + password → login token and the user's details. */
@@ -28,7 +29,7 @@ export function getMe() {
   return api<User>("/auth/me");
 }
 
-/** Creates an account. No role is sent, so the backend makes it a developer. */
+/** Creates an account. Only developer or tester can be chosen (default developer). */
 export function register(data: RegisterData) {
   return api<User>("/users", {
     method: "POST",

@@ -1,5 +1,10 @@
 import { TASK_TYPES, type TaskStatus, type TaskType } from "../../api/tasks";
 
+/** Admins and managers may create, edit, start and complete sprints. */
+export function canManageSprints(role: string | undefined): boolean {
+  return role === "admin" || role === "manager";
+}
+
 /** Board columns of the Scrum Board, in order. */
 export const SCRUM_COLUMNS: { key: TaskStatus; label: string }[] = [
   { key: "todo", label: "To Do" },

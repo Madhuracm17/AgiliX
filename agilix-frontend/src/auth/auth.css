@@ -48,7 +48,8 @@
   margin-top: 6px;
 }
 
-.auth-card input {
+.auth-card input,
+.auth-card select {
   width: 100%;
   border: 1px solid #dfe2e9;
   border-radius: 8px;
@@ -58,7 +59,8 @@
   outline: none;
 }
 
-.auth-card input:focus {
+.auth-card input:focus,
+.auth-card select:focus {
   border-color: #635bff;
 }
 

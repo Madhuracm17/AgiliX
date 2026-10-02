@@ -7,11 +7,14 @@ import {
   useParams,
 } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "./auth/auth-context";
 import AppShell from "./components/layout/AppShell";
 import ProjectDashboard from "./components/dashboard/ProjectDashboard";
 import ProductBacklogPage from "./components/scrum/ProductBacklogPage";
 import ScrumBoardPage from "./components/scrum/ScrumBoardPage";
 import NewTaskPage from "./components/scrum/NewTaskPage";
+import ProjectTeamPage from "./components/team/ProjectTeamPage";
+import "./components/team/team.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
@@ -302,8 +305,10 @@ function TaskTimer({ task }: { task: Task }) {
 }
 
 function ProjectsPage() {
+  const { user: currentUser } = useAuth();
+  // Only admins create projects (the backend enforces this too).
+  const isAdmin = currentUser.role === "admin";
   const [projects, setProjects] = useState<Project[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -311,8 +316,12 @@ function ProjectsPage() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [owner, setOwner] = useState("");
   const [methodology, setMethodology] = useState<"scrum" | "kanban">("scrum");
+
+  // Team chosen by the admin: people are found by email and shown as chips.
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [members, setMembers] = useState<User[]>([]);
+  const [memberChoice, setMemberChoice] = useState("");
 
   const navigate = useNavigate();
 
@@ -336,38 +345,31 @@ function ProjectsPage() {
     }
   };
 
-  const loadUsers = async () => {
-    try {
-      const response = await fetch(`${API_URL}/users`);
-
-      if (!response.ok) {
-        throw new Error("Failed to load users");
-      }
-
-      const data = await response.json();
-      setUsers(data);
-
-      if (data.length > 0) {
-        setOwner(data[0]._id);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   useEffect(() => {
     loadProjects();
-    loadUsers();
-  }, []);
+    if (isAdmin) {
+      fetch(`${API_URL}/users`)
+        .then((res) => (res.ok ? res.json() : []))
+        .then(setAllUsers)
+        .catch(() => setAllUsers([]));
+    }
+  }, [isAdmin]);
+
+  // People who can still be added: not the owner (you) and not already chosen.
+  const addableUsers = allUsers.filter(
+    (u) => u._id !== currentUser._id && !members.some((m) => m._id === u._id)
+  );
+
+  const addMember = () => {
+    const chosen = addableUsers.find((u) => u._id === memberChoice);
+    if (!chosen) return;
+    setMembers([...members, chosen]);
+    setMemberChoice("");
+  };
 
   const createProject = async () => {
     if (!name.trim()) {
       alert("Please enter a project name.");
-      return;
-    }
-
-    if (!owner) {
-      alert("Please create a team member first.");
       return;
     }
 
@@ -382,8 +384,8 @@ function ProjectsPage() {
         body: JSON.stringify({
           name,
           description,
-          owner,
           methodology,
+          members: members.map((m) => m._id),
         }),
       });
 
@@ -395,6 +397,8 @@ function ProjectsPage() {
       setName("");
       setDescription("");
       setMethodology("scrum");
+      setMembers([]);
+      setMemberChoice("");
       setShowForm(false);
 
       await loadProjects();
@@ -416,12 +420,14 @@ function ProjectsPage() {
           </p>
         </div>
 
-        <button className="primary-button" onClick={() => setShowForm(true)}>
-          + New Project
-        </button>
+        {isAdmin && (
+          <button className="primary-button" onClick={() => setShowForm(true)}>
+            + New Project
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {isAdmin && showForm && (
         <div className="form-card">
           <h2>Create New Project</h2>
 
@@ -440,16 +446,46 @@ function ProjectsPage() {
             onChange={(e) => setDescription(e.target.value)}
           />
 
-          <label>Project owner</label>
-          <select value={owner} onChange={(e) => setOwner(e.target.value)}>
-            <option value="">Select owner</option>
-
-            {users.map((user) => (
-              <option key={user._id} value={user._id}>
-                {user.name} ({user.email})
-              </option>
-            ))}
-          </select>
+          <label>Team members</label>
+          <div className="member-invite">
+            <select
+              value={memberChoice}
+              onChange={(e) => setMemberChoice(e.target.value)}
+            >
+              <option value="">Select a person</option>
+              {addableUsers.map((u) => (
+                <option key={u._id} value={u._id}>
+                  {u.name} ({u.email})
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={addMember}
+              disabled={!memberChoice}
+            >
+              Add
+            </button>
+          </div>
+          {members.length > 0 && (
+            <div className="member-chips">
+              {members.map((m) => (
+                <span className="member-chip" key={m._id}>
+                  {m.name}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${m.name}`}
+                    onClick={() =>
+                      setMembers(members.filter((x) => x._id !== m._id))
+                    }
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
 
           <label>Methodology</label>
           <div className="methodology-toggle">
@@ -512,7 +548,11 @@ function ProjectsPage() {
       {!loading && !error && projects.length === 0 && (
         <div className="empty-state">
           <h2>No projects yet</h2>
-          <p>Create your first AgiliX project to get started.</p>
+          <p>
+            {isAdmin
+              ? "Create your first AgiliX project to get started."
+              : "You are not on any project yet. Ask an admin to add you to one."}
+          </p>
         </div>
       )}
 
@@ -551,6 +591,8 @@ function ProjectsPage() {
 }
 
 function TeamPage() {
+  const { user: currentUser } = useAuth();
+  const isAdmin = currentUser.role === "admin";
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -585,6 +627,27 @@ function TeamPage() {
   useEffect(() => {
     loadUsers();
   }, []);
+
+  const changeRole = async (target: User, role: string) => {
+    try {
+      const response = await fetch(`${API_URL}/users/${target._id}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(
+          Array.isArray(data.message) ? data.message.join(", ") : data.message
+        );
+      }
+      setUsers((list) =>
+        list.map((u) => (u._id === target._id ? { ...u, role } : u))
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to change the role");
+    }
+  };
 
   const createUser = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
@@ -674,8 +737,7 @@ function TeamPage() {
           <label>Role</label>
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="developer">Developer</option>
-            <option value="manager">Manager</option>
-            <option value="admin">Admin</option>
+            <option value="tester">Tester</option>
           </select>
 
           <div className="form-actions">
@@ -730,6 +792,21 @@ function TeamPage() {
                 <h2>{user.name}</h2>
                 <p>{user.email}</p>
                 <span className="role-badge">{user.role}</span>
+                {isAdmin && user._id !== currentUser._id && (
+                  <div>
+                    <select
+                      className="role-select"
+                      aria-label={`Role of ${user.name}`}
+                      value={user.role}
+                      onChange={(e) => changeRole(user, e.target.value)}
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="manager">Manager</option>
+                      <option value="developer">Developer</option>
+                      <option value="tester">Tester</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -1631,6 +1708,10 @@ function App() {
             element={<ReportsPage />}
           />
 
+          <Route
+            path="/projects/:projectId/team"
+            element={<ProjectTeamPage />}
+          />
           <Route path="/team" element={<TeamPage />} />
         </Route>
       </Routes>

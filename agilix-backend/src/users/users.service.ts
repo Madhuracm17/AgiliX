@@ -1,8 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
-import { User, UserDocument } from './schemas/user.schema';
+import { User, UserDocument, UserRole } from './schemas/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 
 /** bcrypt cost factor — 10 is the widely used default (salted, ~100 ms per hash). */
@@ -46,6 +51,22 @@ export class UsersService {
     await this.userModel
       .updateOne({ _id: id }, { passwordHash: await this.hash(password) })
       .exec();
+  }
+
+  /**
+   * Changes a user's role. An admin cannot change their own role, so the
+   * workspace can never be left without an admin. The person's current login
+   * keeps the old role until they log in again.
+   */
+  async setRole(id: string, role: UserRole, actingUserId: string): Promise<User> {
+    if (id === actingUserId) {
+      throw new BadRequestException('You cannot change your own role');
+    }
+    const user = await this.userModel
+      .findByIdAndUpdate(id, { role }, { new: true })
+      .select('-passwordHash');
+    if (!user) throw new NotFoundException('User not found');
+    return user;
   }
 
   async findOne(id: string): Promise<User> {

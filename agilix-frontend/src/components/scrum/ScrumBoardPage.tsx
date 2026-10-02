@@ -1,5 +1,6 @@
 import { useEffect, useState, type DragEvent, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../../auth/auth-context";
 import { createSprint, getSprints, type Sprint } from "../../api/sprints";
 import {
   getSprintStats,
@@ -15,6 +16,7 @@ import SprintStatusBadge from "../sprints/SprintStatusBadge";
 import {
   SCRUM_COLUMNS,
   SPRINT_WEEK_OPTIONS,
+  canManageSprints,
   formatLongDate,
   initials,
   nextSprintDates,
@@ -40,6 +42,9 @@ interface ScrumBoardPageProps {
 export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps) {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Only admins and managers create sprints (also enforced by the backend).
+  const canManage = canManageSprints(user.role);
 
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,9 +222,11 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
         </div>
 
         <div className="scrum-header-actions">
-          <button className="secondary-button" onClick={() => setShowForm(true)}>
-            + New Sprint
-          </button>
+          {canManage && (
+            <button className="secondary-button" onClick={() => setShowForm(true)}>
+              + New Sprint
+            </button>
+          )}
           <button
             className="primary-button"
             onClick={() => navigate(`/projects/${projectId}/backlog`)}
@@ -297,7 +304,11 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
       {!loading && !error && sprints.length === 0 && (
         <div className="empty-state">
           <h2>No sprints yet</h2>
-          <p>Create your first sprint with “+ New Sprint” to start planning.</p>
+          <p>
+            {canManage
+              ? "Create your first sprint with “+ New Sprint” to start planning."
+              : "An admin or manager will create the first sprint."}
+          </p>
         </div>
       )}
 

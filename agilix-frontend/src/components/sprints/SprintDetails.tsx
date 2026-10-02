@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { completeSprint, startSprint, updateSprint } from "../../api/sprints";
 import SprintStatusBadge from "./SprintStatusBadge";
-import { sprintLabel } from "../scrum/taskDisplay";
+import { useAuth } from "../../auth/auth-context";
+import { canManageSprints, sprintLabel } from "../scrum/taskDisplay";
 import "./SprintDetails.css";
 
 /** The sprint fields this component needs (works with App.tsx's Sprint type). */
@@ -36,6 +37,9 @@ export default function SprintDetails({
   unfinishedCount,
   onChanged,
 }: SprintDetailsProps) {
+  const { user } = useAuth();
+  // Only admins and managers start, complete or edit sprints (also enforced by the backend).
+  const canManage = canManageSprints(user.role);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -152,7 +156,7 @@ export default function SprintDetails({
           </p>
         </div>
 
-        {!isCompleted && !editing && !completing && (
+        {canManage && !isCompleted && !editing && !completing && (
           <div className="sprint-details-actions">
             <button type="button" className="secondary-button" onClick={openEdit} disabled={busy}>
               Edit
