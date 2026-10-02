@@ -8,11 +8,12 @@ export class CreateProjectDto {
   @IsString()
   description?: string;
 
-  @IsMongoId()
-  owner: string;
+  // The owner is always the admin who creates the project (taken from the
+  // login token), so it is not accepted from the request body.
 
   @IsOptional()
   @IsArray()
+  @IsMongoId({ each: true })
   members?: string[];
 
   @IsOptional()

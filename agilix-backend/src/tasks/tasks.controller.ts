@@ -2,6 +2,10 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthUser } from '../auth/jwt-config';
+import { requireRole } from '../auth/roles';
+import { UserRole } from '../users/schemas/user.schema';
 
 @Controller('tasks')
 export class TasksController {
@@ -33,8 +37,17 @@ export class TasksController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateTaskDto) {
-    return this.tasksService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateTaskDto, @CurrentUser() user: AuthUser) {
+    // Changing who a task is assigned to or how important it is belongs to managers and admins.
+    if (dto.priority !== undefined || dto.assignee !== undefined) {
+      requireRole(
+        user,
+        'You do not have permission to change a task\'s priority or assignee. Please contact a manager or an admin.',
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+      );
+    }
+    return this.tasksService.update(id, dto, user.role);
   }
 
   @Patch(':id/sprint/:sprintId')

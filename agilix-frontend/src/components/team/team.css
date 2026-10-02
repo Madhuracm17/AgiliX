@@ -1,0 +1,97 @@
+/* ---- Team members: chips (Create Project) and the project Team page ---- */
+
+.member-invite {
+  display: flex;
+  gap: 8px;
+}
+
+.member-invite input,
+.member-invite select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #dfe2e9;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 13px;
+  background: #ffffff;
+}
+
+.member-error {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #d43f3f;
+}
+
+.member-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: #eeedff;
+  color: #4b43d6;
+  padding: 4px 6px 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.member-chip button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.project-team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.project-team-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 16px;
+  padding: 12px 16px;
+}
+
+.project-team-row .project-team-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-team-row h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.project-team-row p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #626a7a;
+  overflow-wrap: anywhere;
+}
+
+.role-select {
+  border: 1px solid #dfe2e9;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+  margin-top: 6px;
+}

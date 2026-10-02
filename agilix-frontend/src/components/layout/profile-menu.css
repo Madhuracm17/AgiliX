@@ -1,0 +1,88 @@
+/* ---- Profile icon + dropdown in the top bar ---- */
+
+.profile-menu {
+  position: relative;
+}
+
+.profile-menu-trigger {
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+
+.profile-menu-trigger:focus-visible {
+  outline: 2px solid #635bff;
+  outline-offset: 2px;
+}
+
+.profile-menu-card {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 260px;
+  background: #ffffff;
+  border: 1px solid #e7e9ef;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(23, 32, 51, 0.14);
+  padding: 14px;
+  z-index: 50;
+}
+
+.profile-menu-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eceef3;
+}
+
+.profile-menu-head .topbar-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
+}
+
+.profile-menu-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profile-menu-info strong {
+  font-size: 14px;
+  color: #172033;
+  overflow-wrap: anywhere;
+}
+
+.profile-menu-info span {
+  font-size: 12px;
+  color: #626a7a;
+  overflow-wrap: anywhere;
+}
+
+.profile-menu-info .role-badge {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.profile-menu-logout {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid #e1e4eb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #d43f3f;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profile-menu-logout:hover {
+  background: #fff1f1;
+  border-color: #fbd3d3;
+}

@@ -159,7 +159,7 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
         <button className="secondary-button" onClick={() => go("/reports")}>
           Reports
         </button>
-        <button className="secondary-button" onClick={() => navigate("/team")}>
+        <button className="secondary-button" onClick={() => go("/team")}>
           Team
         </button>
       </nav>

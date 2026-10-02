@@ -14,8 +14,9 @@ export interface Project {
 export interface CreateProjectData {
   name: string;
   description?: string;
-  owner: string;
+  /** The backend makes the logged-in admin the owner. */
   members?: string[];
+  methodology?: "scrum" | "kanban";
 }
 
 export function getProjects() {
@@ -30,6 +31,12 @@ export function createProject(data: CreateProjectData) {
   return api<Project>("/projects", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export function removeProjectMember(projectId: string, userId: string) {
+  return api<Project>(`/projects/${projectId}/members/${userId}`, {
+    method: "DELETE",
   });
 }
 

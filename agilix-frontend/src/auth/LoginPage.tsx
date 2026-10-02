@@ -17,6 +17,7 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"developer" | "tester">("developer");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -49,7 +50,7 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
 
     try {
       if (isRegister) {
-        await register({ name: trimmedName, email: trimmedEmail, password });
+        await register({ name: trimmedName, email: trimmedEmail, password, role });
       }
       const result = await login(trimmedEmail, password);
       onLoggedIn(result.accessToken, result.user);
@@ -99,6 +100,20 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
+
+        {isRegister && (
+          <>
+            <label htmlFor="auth-role">I am a</label>
+            <select
+              id="auth-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value as "developer" | "tester")}
+            >
+              <option value="developer">Developer</option>
+              <option value="tester">Tester</option>
+            </select>
+          </>
+        )}
 
         <label htmlFor="auth-password">Password</label>
         <input
