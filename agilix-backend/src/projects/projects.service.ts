@@ -58,6 +58,47 @@ export class ProjectsService {
     return project;
   }
 
+  /**
+   * For the web pages. If the owner or a member comes back as a bare id instead of
+   * { _id, name, email }, this looks that person up and fills the details in, so the
+   * Team page and the Assignee dropdowns always get names. People who no longer exist
+   * are left out. The AI services do not use this; they call findOne as before.
+   */
+  async withPeople(input: unknown): Promise<any> {
+    type Plain = { owner?: unknown; members?: unknown[] };
+    const list = (Array.isArray(input) ? input : [input]) as Array<{ toObject?: () => Plain }>;
+    const plain = list.map((p) => (typeof p.toObject === 'function' ? p.toObject() : (p as Plain)));
+
+    const isPerson = (v: unknown) => !!v && typeof v === 'object' && 'name' in (v as object);
+
+    const missing = new Set<string>();
+    for (const p of plain) {
+      for (const v of [p.owner, ...(p.members ?? [])]) {
+        if (v != null && !isPerson(v)) missing.add(String(v));
+      }
+    }
+
+    const found = new Map<string, unknown>();
+    const ids = [...missing].filter((id) => isValidObjectId(id)).map((id) => new Types.ObjectId(id));
+    if (ids.length > 0) {
+      const users = (await this.projectModel.db
+        .model('User')
+        .find({ _id: { $in: ids } })
+        .select('name email')
+        .lean()
+        .exec()) as Array<{ _id: unknown }>;
+      for (const u of users) found.set(String(u._id), u);
+    }
+
+    const fill = (v: unknown) => (isPerson(v) ? v : (found.get(String(v)) ?? null));
+    const out = plain.map((p) => ({
+      ...p,
+      owner: fill(p.owner),
+      members: (p.members ?? []).map(fill).filter((m) => m !== null),
+    }));
+    return Array.isArray(input) ? out : out[0];
+  }
+
   async addMember(projectId: string, userId: string) {
     if (!isValidObjectId(userId)) throw new BadRequestException('Invalid user id');
     const project = await this.projectModel.findByIdAndUpdate(

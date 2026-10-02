@@ -12,14 +12,14 @@ import { initials, readError, sameId } from "../scrum/taskDisplay";
 import "./team.css";
 
 /**
- * Team of one project. Everyone on the project can see it; only admins can
+ * Team of one project. Everyone on the project can see it; only admins and managers can
  * add or remove people.
  */
 export default function ProjectTeamPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isAdmin = user.role === "admin";
+  const isAdmin = user.role === "admin" || user.role === "manager";
 
   const [project, setProject] = useState<Project | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -110,7 +110,7 @@ export default function ProjectTeamPage() {
             className="eyebrow breadcrumb-link"
             onClick={() => navigate(`/projects/${projectId}`)}
           >
-            ← Dashboard
+            ← Project
           </p>
           <h1>Team</h1>
           <p className="page-description">

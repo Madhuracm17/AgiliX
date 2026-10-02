@@ -14,12 +14,9 @@ import ProductBacklogPage from "./components/scrum/ProductBacklogPage";
 import ScrumBoardPage from "./components/scrum/ScrumBoardPage";
 import NewTaskPage from "./components/scrum/NewTaskPage";
 import ProjectTeamPage from "./components/team/ProjectTeamPage";
+import ReportsPage from "./components/reports/ReportsPage";
+import ProjectCard from "./components/projects/ProjectCard";
 import "./components/team/team.css";
-import { readError } from "./components/scrum/taskDisplay";
-import { getSprints, type Sprint } from "./api/sprints";
-import { getSprintRisk, type SprintRisk } from "./api/ai";
-import { getProject } from "./api/projects";
-import KanbanInsights from "./components/ai/KanbanInsights";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
@@ -52,20 +49,20 @@ type Task = {
   type?: string | null;
 };
 
-type MemberWorkload = {
-  user: { _id: string; name: string; email: string };
-  tasksTotal: number;
-  tasksCompleted: number;
-  tasksInProgress: number;
-  hoursWorked: number;
-  completionRate: number;
+type Sprint = {
+  _id: string;
+  name: string;
+  project: string;
+  goal?: string;
+  startDate: string;
+  endDate: string;
+  status: string;
 };
 
-type ProjectSummary = {
-  totalTasks: number;
-  doneTasks: number;
-  completionRate: number;
-  totalHours: number;
+type SprintRisk = {
+  risk: "green" | "yellow" | "red";
+  reasoning: string;
+  completionForecastPercent: number;
 };
 
 function formatDuration(totalSeconds: number) {
@@ -295,8 +292,8 @@ function TaskTimer({ task }: { task: Task }) {
 
 function ProjectsPage() {
   const { user: currentUser } = useAuth();
-  // Only admins create projects (the backend enforces this too).
-  const isAdmin = currentUser.role === "admin";
+  // Admins and managers create projects (the backend enforces this too).
+  const canCreateProjects = currentUser.role === "admin" || currentUser.role === "manager";
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -307,7 +304,7 @@ function ProjectsPage() {
   const [description, setDescription] = useState("");
   const [methodology, setMethodology] = useState<"scrum" | "kanban">("scrum");
 
-  // Team chosen by the admin: people are found by email and shown as chips.
+  // Team chosen by the person creating the project: people are found by email and shown as chips.
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [members, setMembers] = useState<User[]>([]);
   const [memberChoice, setMemberChoice] = useState("");
@@ -336,13 +333,13 @@ function ProjectsPage() {
 
   useEffect(() => {
     loadProjects();
-    if (isAdmin) {
+    if (canCreateProjects) {
       fetch(`${API_URL}/users`)
         .then((res) => (res.ok ? res.json() : []))
         .then(setAllUsers)
         .catch(() => setAllUsers([]));
     }
-  }, [isAdmin]);
+  }, [canCreateProjects]);
 
   // People who can still be added: not the owner (you) and not already chosen.
   const addableUsers = allUsers.filter(
@@ -402,21 +399,26 @@ function ProjectsPage() {
     <div>
       <div className="page-header">
         <div>
-          <p className="eyebrow">WORKSPACE</p>
+          <p
+            className="eyebrow breadcrumb-link"
+            onClick={() => navigate("/dashboard")}
+          >
+            ← Dashboard
+          </p>
           <h1>Projects</h1>
           <p className="page-description">
             Manage your Agile projects and teams.
           </p>
         </div>
 
-        {isAdmin && (
+        {canCreateProjects && (
           <button className="primary-button" onClick={() => setShowForm(true)}>
             + New Project
           </button>
         )}
       </div>
 
-      {isAdmin && showForm && (
+      {canCreateProjects && showForm && (
         <div className="form-card">
           <h2>Create New Project</h2>
 
@@ -538,9 +540,9 @@ function ProjectsPage() {
         <div className="empty-state">
           <h2>No projects yet</h2>
           <p>
-            {isAdmin
+            {canCreateProjects
               ? "Create your first AgiliX project to get started."
-              : "You are not on any project yet. Ask an admin to add you to one."}
+              : "You are not on any project yet. Ask an admin or a manager to add you to one."}
           </p>
         </div>
       )}
@@ -548,30 +550,17 @@ function ProjectsPage() {
       {!loading && !error && projects.length > 0 && (
         <div className="project-grid">
           {projects.map((project) => (
-            <div
-              className="project-card"
+            <ProjectCard
               key={project._id}
-              onClick={() => navigate(`/projects/${project._id}`)}
-            >
-              <div className="project-card-icon">
-                {project.name.charAt(0).toUpperCase()}
-              </div>
-
-              <h2>{project.name}</h2>
-
-              <p>
-                {project.description || "No project description available."}
-              </p>
-
-              <div className="project-card-footer">
-                <span>
-                  {project.members?.length || 0} member
-                  {project.members?.length === 1 ? "" : "s"}
-                </span>
-
-                {project.owner && <span>Owner: {project.owner.name}</span>}
-              </div>
-            </div>
+              project={project}
+              onOpen={() =>
+                navigate(
+                  (project.methodology || "scrum") === "kanban"
+                    ? `/projects/${project._id}/kanban`
+                    : `/projects/${project._id}/sprints`,
+                )
+              }
+            />
           ))}
         </div>
       )}
@@ -581,17 +570,11 @@ function ProjectsPage() {
 
 function TeamPage() {
   const { user: currentUser } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = currentUser.role === "admin";
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [creating, setCreating] = useState(false);
-
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("developer");
 
   const loadUsers = async () => {
     try {
@@ -638,115 +621,23 @@ function TeamPage() {
     }
   };
 
-  const createUser = async () => {
-    if (!name.trim() || !email.trim() || !password.trim()) {
-      alert("Please fill all fields.");
-      return;
-    }
-
-    try {
-      setCreating(true);
-
-      const response = await fetch(`${API_URL}/users`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name,
-          email,
-          password,
-          role,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || "Failed to create user");
-      }
-
-      setName("");
-      setEmail("");
-      setPassword("");
-      setRole("developer");
-      setShowForm(false);
-
-      await loadUsers();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to create user");
-    } finally {
-      setCreating(false);
-    }
-  };
-
   return (
     <div>
       <div className="page-header">
         <div>
-          <p className="eyebrow">WORKSPACE</p>
+          <p
+            className="eyebrow breadcrumb-link"
+            onClick={() => navigate("/dashboard")}
+          >
+            ← Dashboard
+          </p>
           <h1>Team</h1>
           <p className="page-description">
             Manage members of your AgiliX workspace.
           </p>
         </div>
 
-        <button className="primary-button" onClick={() => setShowForm(true)}>
-          + Add Member
-        </button>
       </div>
-
-      {showForm && (
-        <div className="form-card">
-          <h2>Add Team Member</h2>
-
-          <label>Name</label>
-          <input
-            type="text"
-            placeholder="Enter name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-
-          <label>Email</label>
-          <input
-            type="email"
-            placeholder="Enter email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-
-          <label>Password</label>
-          <input
-            type="password"
-            placeholder="Enter password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-
-          <label>Role</label>
-          <select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="developer">Developer</option>
-            <option value="tester">Tester</option>
-          </select>
-
-          <div className="form-actions">
-            <button
-              className="secondary-button"
-              onClick={() => setShowForm(false)}
-            >
-              Cancel
-            </button>
-
-            <button
-              className="primary-button"
-              onClick={createUser}
-              disabled={creating}
-            >
-              {creating ? "Creating..." : "Add Member"}
-            </button>
-          </div>
-        </div>
-      )}
 
       {loading && (
         <div className="empty-state">
@@ -808,6 +699,7 @@ function TeamPage() {
 function ProjectOverviewPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
 
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -855,17 +747,16 @@ function ProjectOverviewPage() {
     );
   }
 
-  // Scrum projects open the Scrum dashboard (Figma "Dashboard" screen).
-  // Kanban projects keep the overview below unchanged.
-  if ((project.methodology || "scrum") !== "kanban") {
-    return <ProjectDashboard project={project} />;
-  }
-
   return (
     <div>
       <div className="page-header">
         <div>
-          <p className="eyebrow">PROJECT</p>
+          <p
+            className="eyebrow breadcrumb-link"
+            onClick={() => navigate("/projects")}
+          >
+            ← All Projects
+          </p>
           <h1>{project.name}</h1>
           <p className="page-description">
             {project.description ||
@@ -996,7 +887,7 @@ function ProjectOverviewPage() {
 
           <button
             className="secondary-button"
-            onClick={() => navigate("/team")}
+            onClick={() => navigate(`/projects/${projectId}/team`)}
           >
             Manage Team
           </button>
@@ -1012,60 +903,30 @@ function ProjectOverviewPage() {
 
           <p>
             Track sprint velocity, completion progress and project
-            performance.
+            performance. Sprint risk predictions are under AI Insights.
           </p>
 
-          <button
-            className="secondary-button"
-            onClick={() => navigate(`/projects/${projectId}/reports`)}
-          >
-            View Reports
-          </button>
+          <div className="dashboard-card-actions">
+            {currentUser.role !== "admin" && (
+              <button
+                className="secondary-button"
+                onClick={() => navigate(`/projects/${projectId}/reports`)}
+              >
+                View Reports
+              </button>
+            )}
+
+            {(project.methodology || "scrum") === "scrum" && (
+              <button
+                className="secondary-button"
+                onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
+              >
+                AI Insights
+              </button>
+            )}
+          </div>
         </div>
 
-        {(project.methodology || "scrum") === "scrum" && (
-          <div className="dashboard-card">
-            <div className="dashboard-card-header">
-              <div>
-                <span className="eyebrow">AI INSIGHTS</span>
-                <h2>Sprint Risk</h2>
-              </div>
-            </div>
-
-            <p>
-              Use AI to identify sprint risks and predict whether your team
-              can complete planned work.
-            </p>
-
-            <button
-              className="secondary-button"
-              onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
-            >
-              View AI Insights
-            </button>
-          </div>
-        )}
-
-        <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <div>
-              <span className="eyebrow">PROJECT</span>
-              <h2>Quick Actions</h2>
-            </div>
-          </div>
-
-          <p>
-            Quickly create tasks, start a sprint or add members to your
-            project.
-          </p>
-
-          <button
-            className="secondary-button"
-            onClick={() => navigate(`/projects/${projectId}/backlog`)}
-          >
-            Open Actions
-          </button>
-        </div>
       </div>
 
       <div className="project-workspace-card">
@@ -1111,7 +972,6 @@ function AiInsightsPage() {
   const navigate = useNavigate();
 
   const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [methodology, setMethodology] = useState<"scrum" | "kanban">("scrum");
   const [selectedSprintId, setSelectedSprintId] = useState("");
   const [risk, setRisk] = useState<SprintRisk | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1124,26 +984,27 @@ function AiInsightsPage() {
 
       try {
         setLoading(true);
-        setError("");
 
-        const [project, allSprints] = await Promise.all([
-          getProject(projectId),
-          getSprints(projectId),
-        ]);
-        // Kanban projects get AI Kanban Insights instead of Sprint Risk.
-        setMethodology(project.methodology === "kanban" ? "kanban" : "scrum");
-
-        // Completed sprints have no remaining work to forecast (the backend
-        // rejects them), so only planned and active sprints can be checked.
-        const data = allSprints.filter(
-          (sprint) => sprint.status !== "completed"
+        const response = await fetch(
+          `${API_URL}/sprints?project=${projectId}`
         );
-        setSprints(data);
 
-        const active = data.find((sprint) => sprint.status === "active");
-        setSelectedSprintId(active?._id ?? data[0]?._id ?? "");
+        if (!response.ok) {
+          throw new Error("Failed to load sprints");
+        }
+
+        const data: Sprint[] = await response.json();
+
+        // The risk check is for the sprint that is running now, so only active
+        // sprints are offered. With none, the page says there is no active sprint.
+        const active = data.filter((s) => s.status === "active");
+        setSprints(active);
+
+        if (active.length > 0) {
+          setSelectedSprintId(active[0]._id);
+        }
       } catch (err) {
-        setError(readError(err, "Failed to load sprints"));
+        setError(err instanceof Error ? err.message : "Something went wrong");
       } finally {
         setLoading(false);
       }
@@ -1158,39 +1019,30 @@ function AiInsightsPage() {
     try {
       setChecking(true);
       setError("");
-      setRisk(null);
-      setRisk(await getSprintRisk(selectedSprintId));
+
+      const response = await fetch(
+        `${API_URL}/ai/sprint-risk/${selectedSprintId}`
+      );
+
+      if (!response.ok) {
+        // Show the reason the server gives (for example "AI service is busy"), not a generic line.
+        let reason = "";
+        try {
+          const body = await response.json();
+          reason = Array.isArray(body.message) ? body.message.join(", ") : body.message ?? "";
+        } catch {
+          reason = "";
+        }
+        throw new Error(reason || "Failed to get AI risk prediction");
+      }
+
+      setRisk(await response.json());
     } catch (err) {
-      // Shows the backend's own message (e.g. the 503 "AI service is
-      // temporarily unavailable…" text) instead of a generic one.
-      setError(readError(err, "Failed to get AI risk prediction"));
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setChecking(false);
     }
   };
-
-  if (!loading && !error && methodology === "kanban" && projectId) {
-    return (
-      <div>
-        <div className="page-header">
-          <div>
-            <p
-              className="eyebrow breadcrumb-link"
-              onClick={() => navigate(`/projects/${projectId}`)}
-            >
-              ← Back to project
-            </p>
-            <h1>AI Insights</h1>
-            <p className="page-description">
-              AI analysis of this Kanban board's current state.
-            </p>
-          </div>
-        </div>
-
-        <KanbanInsights projectId={projectId} />
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -1215,13 +1067,10 @@ function AiInsightsPage() {
         </div>
       )}
 
-      {!loading && !error && sprints.length === 0 && (
+      {!loading && sprints.length === 0 && (
         <div className="empty-state">
-          <h2>No planned or active sprint</h2>
-          <p>
-            Create or start a sprint to run a risk check. Completed sprints
-            can't be checked because they have no remaining work.
-          </p>
+          <h2>No active sprint</h2>
+          <p>Start a sprint to run an AI risk check.</p>
         </div>
       )}
 
@@ -1238,7 +1087,6 @@ function AiInsightsPage() {
             {sprints.map((sprint) => (
               <option key={sprint._id} value={sprint._id}>
                 {sprint.name}
-                {sprint.status === "active" ? " · Active" : " · Planned"}
               </option>
             ))}
           </select>
@@ -1279,6 +1127,7 @@ function AiInsightsPage() {
 function KanbanBoardPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -1406,9 +1255,19 @@ function KanbanBoardPage() {
           </p>
         </div>
 
-        <button className="primary-button" onClick={() => setShowForm(true)}>
-          + Create Task
-        </button>
+        <div className="scrum-header-actions">
+          {currentUser.role !== "admin" && (
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/projects/${projectId}/reports`)}
+            >
+              Reports
+            </button>
+          )}
+          <button className="primary-button" onClick={() => setShowForm(true)}>
+            + Create Task
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -1547,135 +1406,39 @@ function KanbanBoardPage() {
   );
 }
 
-function ReportsPage() {
-  const { projectId } = useParams();
-  const navigate = useNavigate();
-
-  const [summary, setSummary] = useState<ProjectSummary | null>(null);
-  const [workload, setWorkload] = useState<MemberWorkload[]>([]);
-  const [loading, setLoading] = useState(true);
+// First page after login (Figma "Dashboard"): totals across all my projects.
+function DashboardPage() {
+  const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const load = async () => {
-      if (!projectId) return;
+    fetch(`${API_URL}/projects`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to load projects");
+        return response.json() as Promise<Project[]>;
+      })
+      .then(setProjects)
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Could not load projects"),
+      );
+  }, []);
 
-      try {
-        setLoading(true);
-        setError("");
-
-        const [summaryRes, workloadRes] = await Promise.all([
-          fetch(`${API_URL}/analytics/summary/${projectId}`),
-          fetch(`${API_URL}/analytics/workload/${projectId}`),
-        ]);
-
-        if (!summaryRes.ok || !workloadRes.ok) {
-          throw new Error("Failed to load reports");
-        }
-
-        setSummary(await summaryRes.json());
-        setWorkload(await workloadRes.json());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Something went wrong");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
-  }, [projectId]);
-
-  return (
-    <div>
-      <div className="page-header">
-        <div>
-          <p
-            className="eyebrow breadcrumb-link"
-            onClick={() => navigate(`/projects/${projectId}`)}
-          >
-            ← Back to project
-          </p>
-          <h1>Reports</h1>
-          <p className="page-description">
-            Task completion and team workload for this project.
-          </p>
-        </div>
+  if (error) {
+    return (
+      <div className="empty-state">
+        <h2>Unable to load dashboard</h2>
+        <p>{error}</p>
       </div>
-
-      {loading && (
-        <div className="empty-state">
-          <h2>Loading reports...</h2>
-        </div>
-      )}
-
-      {error && (
-        <div className="empty-state">
-          <h2>Unable to load reports</h2>
-          <p>{error}</p>
-        </div>
-      )}
-
-      {!loading && !error && summary && (
-        <div className="project-info-card">
-          <div>
-            <span className="eyebrow">TOTAL TASKS</span>
-            <h3>{summary.totalTasks}</h3>
-          </div>
-          <div>
-            <span className="eyebrow">COMPLETED</span>
-            <h3>{summary.doneTasks}</h3>
-          </div>
-          <div>
-            <span className="eyebrow">COMPLETION RATE</span>
-            <h3>{summary.completionRate}%</h3>
-          </div>
-          <div>
-            <span className="eyebrow">HOURS TRACKED</span>
-            <h3>{summary.totalHours}h</h3>
-          </div>
-        </div>
-      )}
-
-      {!loading && !error && workload.length === 0 && (
-        <div className="empty-state">
-          <h2>No team members on this project yet</h2>
-          <p>Add members to the project to see workload here.</p>
-        </div>
-      )}
-
-      {!loading && !error && workload.length > 0 && (
-        <div className="workload-list">
-          {workload.map((w) => (
-            <div className="workload-card" key={w.user._id}>
-              <div className="team-avatar">
-                {w.user.name.charAt(0).toUpperCase()}
-              </div>
-
-              <div className="workload-info">
-                <h2>{w.user.name}</h2>
-
-                <div className="workload-stats">
-                  <span>{w.tasksTotal} tasks</span>
-                  <span>{w.tasksInProgress} in progress</span>
-                  <span>{w.tasksCompleted} completed</span>
-                  <span>{w.hoursWorked}h tracked</span>
-                </div>
-
-                <div className="workload-bar">
-                  <div
-                    className="workload-bar-fill"
-                    style={{ width: `${w.completionRate}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="workload-rate">{w.completionRate}%</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+    );
+  }
+  if (!projects) {
+    return (
+      <div className="empty-state">
+        <h2>Loading dashboard...</h2>
+      </div>
+    );
+  }
+  return <ProjectDashboard projects={projects} />;
 }
 
 function App() {
@@ -1683,7 +1446,8 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<Navigate to="/projects" replace />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
 
           <Route path="/projects" element={<ProjectsPage />} />
 

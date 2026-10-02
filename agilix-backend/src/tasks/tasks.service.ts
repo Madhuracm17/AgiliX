@@ -64,7 +64,17 @@ export class TasksService {
       await this.checkStatusFlow(id, dto.status, role);
     }
 
-    const task = await this.taskModel.findByIdAndUpdate(id, dto, { new: true });
+    // Keep the dates the Scrum reports need: when it became Done, and when it
+    // joined its sprint.
+    const changes: Record<string, unknown> = { ...dto };
+    if (dto.status !== undefined) {
+      changes.completedAt = dto.status === TaskStatus.DONE ? new Date() : null;
+    }
+    if (dto.sprint !== undefined) {
+      changes.addedToSprintAt = dto.sprint ? new Date() : null;
+    }
+
+    const task = await this.taskModel.findByIdAndUpdate(id, changes, { new: true });
     if (!task) throw new NotFoundException('Task not found');
     return task;
   }

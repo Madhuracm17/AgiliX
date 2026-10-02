@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { initialOf, useAuth } from "../../auth/auth-context";
 import "./profile-menu.css";
 
@@ -13,6 +14,7 @@ function roleLabel(role: string): string {
  */
 export default function ProfileMenu() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -61,6 +63,18 @@ export default function ProfileMenu() {
               <span className="role-badge">{roleLabel(user.role)}</span>
             </div>
           </div>
+
+          <button
+            type="button"
+            className="profile-menu-link"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              navigate("/team");
+            }}
+          >
+            Team
+          </button>
 
           <button
             type="button"

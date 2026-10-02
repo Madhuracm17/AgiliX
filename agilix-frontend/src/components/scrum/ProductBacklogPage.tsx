@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../../auth/auth-context";
+import { useProjectPeople } from "../team/useProjectPeople";
 import { getSprints, type Sprint } from "../../api/sprints";
 import {
   TASK_TYPES,
@@ -17,6 +19,7 @@ import StoryPointEstimator from "../ai/StoryPointEstimator";
 import PriorityRecommender from "../ai/PriorityRecommender";
 import TaskSuggestions from "../ai/TaskSuggestions";
 import {
+  canEditTaskPlan,
   priorityLabel,
   readError,
   sameId,
@@ -66,7 +69,17 @@ function formatDate(date: string): string {
  */
 export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPageProps) {
   const { projectId } = useParams();
+  const { user } = useAuth();
+  // Changing a task's priority after it exists is for managers and admins.
+  const canEditPlan = canEditTaskPlan(user.role);
+  // The project team, for the "Assignee" dropdown (admins and managers only).
+  const people = useProjectPeople(canEditPlan ? projectId : undefined);
   const navigate = useNavigate();
+  // Back goes to the Scrum Board only when the person came from it;
+  // otherwise it goes back to the project page.
+  const location = useLocation();
+  const cameFromBoard =
+    (location.state as { from?: string } | null)?.from === "scrum-board";
 
   const [backlog, setBacklog] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -137,6 +150,23 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
   const applyPriority = async (taskId: string, priority: TaskPriority) => {
     await updateTask(taskId, { priority });
     patchLocal(taskId, { priority });
+  };
+
+  // Admins and managers assign a task to a team member (or clear it).
+  const changeAssignee = async (taskId: string, personId: string) => {
+    try {
+      const person = people.find((p) => p._id === personId);
+      await updateTask(taskId, { assignee: personId || null });
+      const assignee = person
+        ? ({ _id: person._id, name: person.name, email: person.email } as Task["assignee"])
+        : null;
+      patchLocal(taskId, { assignee });
+      setAllTasks((prev) =>
+        prev.map((t) => (t._id === taskId ? { ...t, assignee } : t))
+      );
+    } catch (err) {
+      alert(readError(err, "Failed to change the assignee"));
+    }
   };
 
   const changeType = async (taskId: string, type: TaskType) => {
@@ -250,9 +280,15 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
         <div>
           <p
             className="eyebrow breadcrumb-link"
-            onClick={() => navigate(`/projects/${projectId}/sprints`)}
+            onClick={() =>
+              navigate(
+                cameFromBoard
+                  ? `/projects/${projectId}/sprints`
+                  : `/projects/${projectId}`,
+              )
+            }
           >
-            ← Scrum Board
+            {cameFromBoard ? "← Scrum Board" : "← Project"}
           </p>
           <h1>Product Backlog</h1>
           <p className="page-description">
@@ -487,6 +523,25 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                                       </select>
                                     </label>
 
+                                    {canEditPlan && (
+                                      <label>
+                                        Assignee
+                                        <select
+                                          value={task.assignee?._id ?? ""}
+                                          onChange={(e) =>
+                                            changeAssignee(task._id, e.target.value)
+                                          }
+                                        >
+                                          <option value="">Unassigned</option>
+                                          {people.map((person) => (
+                                            <option key={person._id} value={person._id}>
+                                              {person.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                    )}
+
                                     {openSprints.length > 0 && (
                                       <label>
                                         Sprint
@@ -508,16 +563,18 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                                     )}
                                   </div>
 
-                                  <PriorityRecommender
-                                    projectId={projectId}
-                                    taskId={task._id}
-                                    title={task.title}
-                                    description={task.description}
-                                    currentPriority={task.priority}
-                                    applyLabel="Apply Recommendation"
-                                    appliedText={(value) => `Priority set to ${value}.`}
-                                    onApply={(value) => applyPriority(task._id, value)}
-                                  />
+                                  {canEditPlan && (
+                                    <PriorityRecommender
+                                      projectId={projectId}
+                                      taskId={task._id}
+                                      title={task.title}
+                                      description={task.description}
+                                      currentPriority={task.priority}
+                                      applyLabel="Apply Recommendation"
+                                      appliedText={(value) => `Priority set to ${value}.`}
+                                      onApply={(value) => applyPriority(task._id, value)}
+                                    />
+                                  )}
 
                                   <StoryPointEstimator
                                     projectId={projectId}

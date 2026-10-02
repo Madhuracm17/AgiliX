@@ -1,6 +1,7 @@
 import { useEffect, useState, type DragEvent, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { useProjectPeople } from "../team/useProjectPeople";
 import { createSprint, getSprints, type Sprint } from "../../api/sprints";
 import {
   getSprintStats,
@@ -17,6 +18,8 @@ import {
   SCRUM_COLUMNS,
   SPRINT_WEEK_OPTIONS,
   canManageSprints,
+  canEditTaskPlan,
+  canMarkDone,
   formatLongDate,
   initials,
   nextSprintDates,
@@ -45,6 +48,11 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   const { user } = useAuth();
   // Only admins and managers create sprints (also enforced by the backend).
   const canManage = canManageSprints(user.role);
+  // Only testers, managers and admins move a task from Review to Done.
+  const signOff = canMarkDone(user.role);
+  // Admins and managers can reassign a task to another team member.
+  const canReassign = canEditTaskPlan(user.role);
+  const people = useProjectPeople(canReassign ? projectId : undefined);
 
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +125,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   const moveTask = async (taskId: string, status: TaskStatus) => {
     const task = sprintTasks.find((t) => t._id === taskId);
     if (!task || sprintIsLocked || nextStatus(task.status) !== status) return;
+    if (status === "done" && !signOff) return;
 
     // Optimistic update; stats are refetched afterwards.
     setSprintTasks((prev) =>
@@ -129,6 +138,15 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
       alert(readError(err, "Failed to move task"));
     }
     if (selectedSprintId) await loadSprintDetails(selectedSprintId);
+  };
+
+  const reassign = async (task: Task, personId: string) => {
+    try {
+      await updateTask(task._id, { assignee: personId || null });
+      if (selectedSprintId) await loadSprintDetails(selectedSprintId);
+    } catch (err) {
+      alert(readError(err, "Failed to change the assignee"));
+    }
   };
 
   const moveToBacklog = async (task: Task) => {
@@ -191,7 +209,8 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   const canDropOn = (status: TaskStatus) =>
     !sprintIsLocked &&
     draggingTask !== null &&
-    nextStatus(draggingTask.status) === status;
+    nextStatus(draggingTask.status) === status &&
+    (status !== "done" || signOff);
 
   const onDrop = (event: DragEvent, status: TaskStatus) => {
     event.preventDefault();
@@ -213,7 +232,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
             className="eyebrow breadcrumb-link"
             onClick={() => navigate(`/projects/${projectId}`)}
           >
-            ← Dashboard
+            ← Project
           </p>
           <h1>Scrum Board</h1>
           <p className="page-description">
@@ -227,9 +246,19 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
               + New Sprint
             </button>
           )}
+          {user.role !== "admin" && (
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/projects/${projectId}/reports`)}
+            >
+              Reports
+            </button>
+          )}
           <button
             className="primary-button"
-            onClick={() => navigate(`/projects/${projectId}/backlog`)}
+            onClick={() =>
+              navigate(`/projects/${projectId}/backlog`, { state: { from: "scrum-board" } })
+            }
           >
             Product Backlog
           </button>
@@ -393,7 +422,11 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                       <div
                         key={task._id}
                         className="scrum-card"
-                        draggable={!sprintIsLocked && task.status !== "done"}
+                        draggable={
+                          !sprintIsLocked &&
+                          task.status !== "done" &&
+                          (task.status !== "review" || signOff)
+                        }
                         onDragStart={(e) => onDragStart(e, task)}
                         onDragEnd={onDragEnd}
                       >
@@ -425,11 +458,31 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                           </span>
                         </div>
 
+                        {canReassign && !sprintIsLocked && (
+                          <select
+                            className="scrum-assignee-select"
+                            aria-label={`Assignee of ${task.title}`}
+                            value={task.assignee?._id ?? ""}
+                            onChange={(e) => reassign(task, e.target.value)}
+                          >
+                            <option value="">Unassigned</option>
+                            {people.map((person) => (
+                              <option key={person._id} value={person._id}>
+                                {person.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
                         {renderTaskTools?.(task)}
 
                         {!sprintIsLocked && (
                           <div className="scrum-card-actions">
-                            {nextStatus(task.status) ? (
+                            {task.status === "review" && !signOff ? (
+                              <p className="scrum-card-final scrum-card-waiting">
+                                Waiting for a tester to sign off
+                              </p>
+                            ) : nextStatus(task.status) ? (
                               <button
                                 type="button"
                                 className="scrum-move-button"

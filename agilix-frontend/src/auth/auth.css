@@ -5,20 +5,20 @@
   display: grid;
   place-items: center;
   padding: 24px 16px;
-  background: #f6f7fb;
+  background: #f6f2e8;
 }
 
 .auth-card {
   width: 100%;
   max-width: 400px;
   background: #ffffff;
-  border: 1px solid #e7e9ef;
+  border: 1px solid #e6dfcd;
   border-radius: 14px;
   padding: 32px 28px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  box-shadow: 0 8px 24px rgba(23, 32, 51, 0.06);
+  box-shadow: 0 8px 24px rgba(48, 52, 46, 0.06);
 }
 
 .auth-logo {
@@ -38,20 +38,20 @@
 .auth-subtitle {
   margin: 0 0 12px;
   font-size: 13px;
-  color: #626a7a;
+  color: #6b6f62;
 }
 
 .auth-card label {
   font-size: 13px;
   font-weight: 600;
-  color: #3f4757;
+  color: #4a4f46;
   margin-top: 6px;
 }
 
 .auth-card input,
 .auth-card select {
   width: 100%;
-  border: 1px solid #dfe2e9;
+  border: 1px solid #ddd5c0;
   border-radius: 8px;
   padding: 11px 12px;
   font: inherit;
@@ -61,7 +61,7 @@
 
 .auth-card input:focus,
 .auth-card select:focus {
-  border-color: #635bff;
+  border-color: #829172;
 }
 
 .auth-error {
@@ -87,14 +87,14 @@
   margin: 10px 0 0;
   text-align: center;
   font-size: 13px;
-  color: #626a7a;
+  color: #6b6f62;
 }
 
 .auth-link {
   border: none;
   background: none;
   padding: 0;
-  color: #5148d8;
+  color: #5f6d52;
   font-weight: 600;
   cursor: pointer;
 }
@@ -111,7 +111,7 @@
 }
 
 .auth-status {
-  color: #626a7a;
+  color: #6b6f62;
   font-size: 14px;
 }
 
@@ -134,10 +134,10 @@
 }
 
 .sidebar-logout {
-  border: 1px solid #dfe2e9;
+  border: 1px solid #ddd5c0;
   border-radius: 7px;
   background: #ffffff;
-  color: #626a7a;
+  color: #6b6f62;
   padding: 6px 10px;
   font-size: 12px;
   font-weight: 600;
@@ -146,6 +146,6 @@
 }
 
 .sidebar-logout:hover {
-  border-color: #c9c6ff;
-  color: #5148d8;
+  border-color: #cfd8c6;
+  color: #5f6d52;
 }

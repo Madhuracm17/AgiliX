@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { Task, TaskDocument, TaskStatus } from '../tasks/schemas/task.schema';
 import {
   TimeEntry,
@@ -34,10 +34,29 @@ export class AnalyticsService {
     if (!project) throw new NotFoundException('Project not found');
 
     // Owner + members, de-duplicated, so someone who is both isn't listed twice.
+    // Anyone who came back as a bare id (no name) is looked up here, so every
+    // entry has a name and email. People who no longer exist are skipped.
+    const candidates: any[] = [project.owner, ...(project.members as any[])].filter(Boolean);
+    const unresolved = candidates
+      .filter((c) => !c.name)
+      .map((c) => String(c._id ?? c))
+      .filter((id) => isValidObjectId(id))
+      .map((id) => new Types.ObjectId(id));
+    const looked = new Map<string, any>();
+    if (unresolved.length > 0) {
+      const users: any[] = await this.projectModel.db
+        .model('User')
+        .find({ _id: { $in: unresolved } })
+        .select('name email')
+        .lean()
+        .exec();
+      for (const u of users) looked.set(String(u._id), u);
+    }
+
     const memberMap = new Map<string, any>();
-    if (project.owner) memberMap.set(String((project.owner as any)._id), project.owner);
-    for (const member of project.members as any[]) {
-      memberMap.set(String(member._id), member);
+    for (const c of candidates) {
+      const person = c.name ? c : looked.get(String(c._id ?? c));
+      if (person) memberMap.set(String(person._id), person);
     }
     const members = Array.from(memberMap.values());
 

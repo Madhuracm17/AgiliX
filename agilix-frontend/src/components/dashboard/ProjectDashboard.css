@@ -16,7 +16,7 @@
 
 .dash-stat {
   background: #ffffff;
-  border: 1px solid #e7e9ef;
+  border: 1px solid #e6dfcd;
   border-radius: 999px;
   padding: 14px 18px;
   display: flex;
@@ -28,23 +28,23 @@
 
 .dash-stat > span {
   font-size: 13px;
-  color: #626a7a;
+  color: #6b6f62;
 }
 
 .dash-stat > strong {
   font-size: 24px;
-  color: #172033;
+  color: #30342e;
 }
 
 .dash-panel {
   background: #ffffff;
-  border: 1px solid #e7e9ef;
+  border: 1px solid #e6dfcd;
   border-radius: 20px;
   padding: 22px 24px;
 }
 
 .dash-panel .dash-stat {
-  background: #f6f7fb;
+  background: #f6f2e8;
 }
 
 .dash-panel-header {
@@ -62,19 +62,19 @@
 .dash-sprint-name {
   font-size: 13px;
   font-weight: 600;
-  color: #635bff;
+  color: #5f6d52;
 }
 
 .dash-goal {
   margin: -6px 0 14px;
   font-size: 13px;
-  color: #3d4556;
+  color: #4a4f46;
 }
 
 .dash-muted {
   margin: 0 0 16px;
   font-size: 13px;
-  color: #626a7a;
+  color: #6b6f62;
 }
 
 .dash-empty {
@@ -83,7 +83,7 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  background: #f6f7fb;
+  background: #f6f2e8;
   border-radius: 12px;
   padding: 14px 18px;
   margin-bottom: 20px;
@@ -92,7 +92,7 @@
 .dash-empty p {
   margin: 0;
   font-size: 14px;
-  color: #3d4556;
+  color: #4a4f46;
 }
 
 .dash-panel .sprint-progress {
@@ -103,14 +103,14 @@
   border: 0;
   background: none;
   padding: 0;
-  color: #635bff;
+  color: #5f6d52;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .dash-link:disabled {
-  color: #9aa1af;
+  color: #9a9d8f;
   cursor: wait;
 }
 
@@ -148,7 +148,7 @@
 }
 
 .dash-card {
-  background: #f6f7fb;
+  background: #f6f2e8;
   border-radius: 20px;
   padding: 18px 20px;
   min-width: 0;
@@ -167,7 +167,7 @@
   flex-direction: column;
   gap: 12px;
   font-size: 13px;
-  color: #172033;
+  color: #30342e;
 }
 
 .dash-activity li {
@@ -175,7 +175,7 @@
 }
 
 .dash-activity span {
-  color: #7c8494;
+  color: #7d8172;
 }
 
 .dash-my-tasks {
@@ -213,12 +213,12 @@
 
 .dash-my-tasks span {
   font-size: 12px;
-  color: #7c8494;
+  color: #7d8172;
 }
 
 .dash-done {
   text-decoration: line-through;
-  color: #7c8494;
+  color: #7d8172;
 }
 
 .dash-badge {
@@ -244,7 +244,7 @@
 }
 
 .dash-badge-done {
-  color: #2f6fdf !important;
+  color: #5f6d52 !important;
 }
 
 @media (max-width: 900px) {

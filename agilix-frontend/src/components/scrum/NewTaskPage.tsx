@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getSprints, type Sprint } from "../../api/sprints";
-import { getUsers, type User } from "../../api/users";
+import { useAuth } from "../../auth/auth-context";
+import { useProjectPeople } from "../team/useProjectPeople";
 import {
   TASK_TYPES,
   addTaskToSprint,
@@ -12,7 +13,7 @@ import {
 import type { StoryPointValue } from "../../api/ai";
 import StoryPointEstimator from "../ai/StoryPointEstimator";
 import PriorityRecommender from "../ai/PriorityRecommender";
-import { readError, sprintLabel } from "./taskDisplay";
+import { canEditTaskPlan, readError, sprintLabel } from "./taskDisplay";
 import "./scrum.css";
 
 const PRIORITIES: { value: TaskPriority; label: string }[] = [
@@ -32,8 +33,12 @@ export default function NewTaskPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  // Admins and managers assign tasks to team members. Developers and testers
+  // create tasks for themselves (or leave them unassigned).
+  const canAssignOthers = canEditTaskPlan(user.role);
+  const people = useProjectPeople(canAssignOthers ? projectId : undefined);
 
-  const [users, setUsers] = useState<User[]>([]);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
   const [allSprints, setAllSprints] = useState<Sprint[]>([]);
 
@@ -41,7 +46,7 @@ export default function NewTaskPage() {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [type, setType] = useState<TaskType | "">("");
-  const [assignee, setAssignee] = useState("");
+  const [assignee, setAssignee] = useState(canAssignOthers ? "" : user._id);
   const [sprintChoice, setSprintChoice] = useState<SprintChoice>(
     searchParams.get("sprint") === "current" ? "current" : "backlog"
   );
@@ -52,9 +57,8 @@ export default function NewTaskPage() {
 
   useEffect(() => {
     if (!projectId) return;
-    Promise.all([getUsers(), getSprints(projectId)])
-      .then(([userData, sprintData]) => {
-        setUsers(userData);
+    getSprints(projectId)
+      .then((sprintData) => {
         setAllSprints(sprintData);
         setActiveSprint(sprintData.find((s) => s.status === "active") ?? null);
       })
@@ -241,12 +245,22 @@ export default function NewTaskPage() {
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
             >
-              <option value="">Unassigned</option>
-              {users.map((user) => (
-                <option key={user._id} value={user._id}>
-                  {user.name}
-                </option>
-              ))}
+              {canAssignOthers ? (
+                <>
+                  <option value="">Unassigned</option>
+                  {people.map((person) => (
+                    <option key={person._id} value={person._id}>
+                      {person.name}
+                      {person._id === user._id ? " (me)" : ""}
+                    </option>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <option value={user._id}>Me ({user.name})</option>
+                  <option value="">Unassigned</option>
+                </>
+              )}
             </select>
           </div>
         </div>

@@ -1,7 +1,8 @@
 import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { UserRole } from '../schemas/user.schema';
 
-export class CreateUserDto {
+/** Account created by an admin or manager for someone else (any role; who may pick which is checked in the controller). */
+export class CreateAccountDto {
   @IsString()
   name: string;
 
@@ -12,13 +13,7 @@ export class CreateUserDto {
   @MinLength(6)
   password: string;
 
-  // Anyone can sign up as a developer or tester. Signing up as a manager or
-  // admin also needs the matching access code (see UsersService.signUp).
   @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;
-
-  @IsOptional()
-  @IsString()
-  accessCode?: string;
 }

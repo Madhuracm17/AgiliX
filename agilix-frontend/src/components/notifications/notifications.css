@@ -1,0 +1,110 @@
+/* ---- Bell icon + notification list in the top bar ---- */
+
+.bell {
+  position: relative;
+}
+
+.bell-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: #4a4f46;
+  padding: 0;
+}
+
+.bell-button:hover {
+  background: #f6f2e8;
+}
+
+.bell-dot {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e53e3e;
+  border: 1.5px solid #ffffff;
+}
+
+.bell-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 320px;
+  max-height: 380px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #e6dfcd;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(48, 52, 46, 0.14);
+  padding: 10px;
+  z-index: 50;
+}
+
+.bell-title {
+  margin: 4px 8px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6b6f62;
+}
+
+.bell-empty {
+  margin: 12px 8px 14px;
+  font-size: 13px;
+  color: #7d8172;
+}
+
+.bell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bell-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  padding: 9px 10px;
+  font: inherit;
+  cursor: pointer;
+  color: #30342e;
+}
+
+.bell-item:hover {
+  background: #f6f2e8;
+}
+
+.bell-item-new {
+  background: #f1f4ed;
+}
+
+.bell-item-new .bell-item-text {
+  font-weight: 700;
+}
+
+.bell-item-text {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.bell-item-meta {
+  font-size: 12px;
+  color: #7d8172;
+}
+
+@media (max-width: 480px) {
+  .bell-panel {
+    width: min(320px, calc(100vw - 32px));
+  }
+}
