@@ -33,6 +33,14 @@ export class ReportsController {
     return this.reportsService.getSeries(sprintId);
   }
 
+  /** Hours tracked per person in a sprint, against a limit. Managers only. */
+  @Header('Cache-Control', 'no-store')
+  @Get('burnout/:sprintId')
+  burnout(@Param('sprintId') sprintId: string, @CurrentUser() user: AuthUser) {
+    requireRole(user, TEAM_REPORTS_MESSAGE, UserRole.MANAGER);
+    return this.reportsService.getBurnout(sprintId);
+  }
+
   @Header('Cache-Control', 'no-store')
   @Get('sprint-report/:sprintId')
   sprintReport(@Param('sprintId') sprintId: string, @CurrentUser() user: AuthUser) {

@@ -1,4 +1,4 @@
-import type { SeriesDay, VelocityReport } from "../../api/reports";
+import type { BurnoutReport, SeriesDay, VelocityReport } from "../../api/reports";
 
 const WIDTH = 640;
 const HEIGHT = 290;
@@ -7,6 +7,7 @@ const PAD = { top: 16, right: 16, bottom: 58, left: 56 };
 const ACCENT = "#c4a04d";
 const MUTED = "#9a9d8f";
 const GOOD = "#829172";
+const CLAY = "#b98262";
 const AXIS = "#4a4f46";
 
 /** The two axis titles: one under the plot, one rotated beside it. */
@@ -36,6 +37,11 @@ interface Line {
   color: string;
   dashed?: boolean;
   values: (number | null)[];
+}
+
+/** 0.5 -> "30m", 2.25 -> "2.25h". Short times read better in minutes. */
+export function formatHours(hours: number): string {
+  return hours < 1 ? `${Math.round(hours * 60)}m` : `${Math.round(hours * 100) / 100}h`;
 }
 
 function niceMax(value: number): number {
@@ -132,17 +138,76 @@ export function BurndownChart({ days }: { days: SeriesDay[] }) {
   );
 }
 
-/** Total scope against completed points. A jump in scope is a scope change. */
-export function BurnupChart({ days }: { days: SeriesDay[] }) {
+/** Hours tracked per person in the sprint, against the hour limit. Over the limit turns clay. */
+export function BurnoutChart({ report }: { report: BurnoutReport }) {
+  const people = report.people;
+  const top = Math.max(report.limitHours, ...people.map((p) => p.hours));
+  // Small limits (like 30 minutes) need a finer scale than the 5-hour steps used for big ones.
+  const max = top <= 1 ? 1 : top <= 2 ? 2 : niceMax(top);
+  const plotW = WIDTH - PAD.left - PAD.right;
+  const plotH = HEIGHT - PAD.top - PAD.bottom;
+  const group = plotW / Math.max(1, people.length);
+  const bar = Math.min(48, group * 0.55);
+  const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f * 100) / 100);
+  const colorOf = (level: "ok" | "near" | "high") =>
+    level === "high" ? CLAY : level === "near" ? ACCENT : GOOD;
+
   return (
-    <LineChart
-      title="Sprint burnup"
-      days={days}
-      lines={[
-        { name: "Scope", color: MUTED, dashed: true, values: days.map((d) => d.scope) },
-        { name: "Completed", color: GOOD, values: days.map((d) => d.completed) },
-      ]}
-    />
+    <div className="rpt-chart">
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label="Team workload in hours">
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={PAD.left} x2={WIDTH - PAD.right} y1={y(t)} y2={y(t)} stroke="#e6dfcd" />
+            <text x={PAD.left - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="#6b6f62">
+              {t}
+            </text>
+          </g>
+        ))}
+
+        {people.map((p, i) => {
+          const cx = PAD.left + group * i + group / 2;
+          return (
+            <g key={p.userId}>
+              <rect
+                x={cx - bar / 2}
+                y={y(p.hours)}
+                width={bar}
+                height={PAD.top + plotH - y(p.hours)}
+                fill={colorOf(p.level)}
+                rx="3"
+              />
+              <text x={cx} y={y(p.hours) - 5} textAnchor="middle" fontSize="11" fontWeight="600" fill={AXIS}>
+                {formatHours(p.hours)}
+              </text>
+              <text x={cx} y={HEIGHT - PAD.bottom + 18} textAnchor="middle" fontSize="11" fill="#6b6f62">
+                {p.name.length > 12 ? `${p.name.slice(0, 11)}…` : p.name}
+              </text>
+            </g>
+          );
+        })}
+
+        <line
+          x1={PAD.left}
+          x2={WIDTH - PAD.right}
+          y1={y(report.limitHours)}
+          y2={y(report.limitHours)}
+          stroke={CLAY}
+          strokeWidth="1.5"
+          strokeDasharray="5 4"
+        />
+
+        <AxisTitles xLabel="Team member" yLabel="Hours tracked" />
+      </svg>
+      <Legend
+        items={[
+          { name: "Within limit", color: GOOD },
+          { name: "Near limit", color: ACCENT },
+          { name: "Over limit", color: CLAY },
+          { name: `Limit (${formatHours(report.limitHours)})`, color: CLAY, dashed: true },
+        ]}
+      />
+    </div>
   );
 }
 

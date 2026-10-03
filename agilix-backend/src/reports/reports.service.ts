@@ -9,6 +9,10 @@ const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Longest sprint chart we draw (days). Keeps the response small. */
 const MAX_DAYS = 60;
+/** Hours of tracked work per person per week before the burnout chart warns. Change it here. */
+const WEEKLY_HOUR_LIMIT = 40;
+/** This many tasks In Progress / Review at once is flagged as a heavy load. */
+const MAX_OPEN_TASKS = 4;
 
 /** One task as the reports see it, whether it comes from the live data or a sprint snapshot. */
 export interface ReportTask {
@@ -43,6 +47,9 @@ const dayStart = (date: Date) =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
+
+/** 0.5 -> "30m", 2.25 -> "2.25h". Short times read better in minutes. */
+const fmtHours = (hours: number) => (hours < 1 ? `${Math.round(hours * 60)}m` : `${hours}h`);
 
 @Injectable()
 export class ReportsService {
@@ -225,6 +232,97 @@ export class ReportsService {
       completedTasks: shape(done),
       incompleteTasks: shape(unfinished),
       scopeChanges,
+    };
+  }
+
+  /**
+   * Workload per person for one sprint: hours tracked with the timer, set against
+   * a hour limit that grows with the sprint's length. Used for the manager's
+   * "burnout" chart. Only reads timer data; nothing is changed.
+   */
+  async getBurnout(sprintId: string) {
+    const sprint = await this.loadSprint(sprintId);
+    const tasks = await this.tasksOf(sprint);
+
+    const start = asDate(sprint.startDate);
+    const end = asDate(sprint.endDate);
+    const sprintDays =
+      start && end ? Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1) : 7;
+    // BURNOUT_LIMIT_HOURS in .env sets the limit for the whole sprint directly (for
+    // example 0.5 for half an hour, handy when testing). Without it, the limit is
+    // the weekly limit scaled to the sprint's length.
+    const override = Number(process.env.BURNOUT_LIMIT_HOURS);
+    const limitHours =
+      Number.isFinite(override) && override > 0
+        ? Math.round(override * 100) / 100
+        : Math.round(((WEEKLY_HOUR_LIMIT * sprintDays) / 7) * 10) / 10;
+
+    // Time tracked on this sprint's tasks, per person.
+    const taskIds = tasks
+      .map((t) => t.id)
+      .filter((id) => OBJECT_ID_PATTERN.test(id))
+      .map((id) => new Types.ObjectId(id));
+    const entries = taskIds.length
+      ? await this.timeEntryModel.find({ task: { $in: taskIds }, endTime: { $ne: null } }).exec()
+      : [];
+
+    const secondsByUser = new Map<string, number>();
+    for (const entry of entries) {
+      const key = String(entry.user);
+      secondsByUser.set(key, (secondsByUser.get(key) ?? 0) + (entry.durationSeconds || 0));
+    }
+
+    // Tasks each person has going at the same time (In Progress and Review).
+    const openByUser = new Map<string, number>();
+    for (const task of tasks) {
+      if (!task.assignee) continue;
+      if (task.status !== TaskStatus.IN_PROGRESS && task.status !== TaskStatus.REVIEW) continue;
+      openByUser.set(task.assignee, (openByUser.get(task.assignee) ?? 0) + 1);
+    }
+
+    // Everyone who has time or open tasks in this sprint, with their names.
+    const ids = new Set<string>([...secondsByUser.keys(), ...openByUser.keys()]);
+    const objectIds = [...ids].filter((id) => OBJECT_ID_PATTERN.test(id)).map((id) => new Types.ObjectId(id));
+    const users = objectIds.length
+      ? ((await this.timeEntryModel.db
+          .model('User')
+          .find({ _id: { $in: objectIds } })
+          .select('name')
+          .lean()
+          .exec()) as unknown as Array<{ _id: unknown; name?: string }>)
+      : [];
+    const nameOf = new Map(users.map((u) => [String(u._id), u.name ?? '']));
+
+    const people = [...ids]
+      .filter((id) => nameOf.get(id))
+      .map((id) => {
+        const hours = Math.round(((secondsByUser.get(id) ?? 0) / 3600) * 100) / 100;
+        const openTasks = openByUser.get(id) ?? 0;
+        let level: 'ok' | 'near' | 'high' = 'ok';
+        let note: string | null = null;
+        if (hours >= limitHours) {
+          level = 'high';
+          note = `${fmtHours(hours)} tracked, over the ${fmtHours(limitHours)} limit for this sprint`;
+        } else if (hours >= limitHours * 0.8) {
+          level = 'near';
+          note = `${fmtHours(hours)} tracked, close to the ${fmtHours(limitHours)} limit`;
+        }
+        if (openTasks >= MAX_OPEN_TASKS) {
+          if (level === 'ok') level = 'near';
+          note = note
+            ? `${note}; ${openTasks} tasks in progress at once`
+            : `${openTasks} tasks in progress at once`;
+        }
+        return { userId: id, name: nameOf.get(id) as string, hours, openTasks, level, note };
+      })
+      .sort((a, b) => b.hours - a.hours);
+
+    return {
+      sprint: this.describe(sprint),
+      sprintDays,
+      weeklyLimitHours: WEEKLY_HOUR_LIMIT,
+      limitHours,
+      people,
     };
   }
 

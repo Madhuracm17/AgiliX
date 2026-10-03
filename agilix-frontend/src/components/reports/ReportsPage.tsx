@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api/client";
 import { getProject, type Project } from "../../api/projects";
 import { getSprints, type Sprint } from "../../api/sprints";
 import {
   getBurndown,
+  getBurnout,
   getMyReport,
   getSprintReport,
   getVelocity,
+  type BurnoutReport,
   type MyReport,
   type SprintReport,
   type SprintSeries,
@@ -16,8 +18,59 @@ import {
 import { useAuth } from "../../auth/auth-context";
 import SprintProgress from "../sprints/SprintProgress";
 import { readError } from "../scrum/taskDisplay";
-import { BurndownChart, BurnupChart, VelocityChart } from "./ReportCharts";
+import { BurndownChart, BurnoutChart, formatHours, VelocityChart } from "./ReportCharts";
 import "./reports.css";
+
+type StatIconKind = "check" | "calendar" | "chart" | "person" | "clock" | "swap";
+
+/** Small line icons shown in the corner of each summary tile. Decorative only. */
+function StatIcon({ kind }: { kind: StatIconKind }) {
+  const paths: Record<StatIconKind, ReactElement> = {
+    check: (
+      <>
+        <rect x="4" y="4" width="16" height="16" rx="3" />
+        <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+      </>
+    ),
+    calendar: (
+      <>
+        <rect x="4" y="5" width="16" height="15" rx="3" />
+        <path d="M8 3v4M16 3v4M4 10h16" />
+        <path d="m9 15 2 2 4-4" />
+      </>
+    ),
+    chart: (
+      <>
+        <path d="M4 19h16" />
+        <path d="m5 16 4-5 3 3 6-8v10H5Z" />
+      </>
+    ),
+    person: (
+      <>
+        <circle cx="12" cy="8.5" r="3.5" />
+        <path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 7.5V12l3 2" />
+      </>
+    ),
+    swap: (
+      <>
+        <path d="M5 8h13l-3-3M19 16H6l3 3" />
+      </>
+    ),
+  };
+  return (
+    <span className="stat-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {paths[kind]}
+      </svg>
+    </span>
+  );
+}
 
 interface Summary {
   totalTasks: number;
@@ -133,6 +186,7 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
   const [sprintId, setSprintId] = useState("");
   const [series, setSeries] = useState<SprintSeries | null>(null);
   const [report, setReport] = useState<SprintReport | null>(null);
+  const [burnout, setBurnout] = useState<BurnoutReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [sprintLoading, setSprintLoading] = useState(false);
   const [sprintsReady, setSprintsReady] = useState(false);
@@ -187,15 +241,17 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
     if (!isScrum || !sprintId) {
       setSeries(null);
       setReport(null);
+      setBurnout(null);
       return;
     }
     let cancelled = false;
     setSprintLoading(true);
-    Promise.all([getBurndown(sprintId), getSprintReport(sprintId)])
-      .then(([seriesData, reportData]) => {
+    Promise.all([getBurndown(sprintId), getSprintReport(sprintId), getBurnout(sprintId)])
+      .then(([seriesData, reportData, burnoutData]) => {
         if (cancelled) return;
         setSeries(seriesData);
         setReport(reportData);
+        setBurnout(burnoutData);
       })
       .catch((err) => !cancelled && setError(readError(err, "Failed to load the sprint report")))
       .finally(() => !cancelled && setSprintLoading(false));
@@ -230,18 +286,22 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
       {summary && (
         <div className="project-info-card">
           <div>
+            <StatIcon kind="calendar" />
             <span className="eyebrow">TOTAL TASKS</span>
             <h3>{summary.totalTasks}</h3>
           </div>
           <div>
+            <StatIcon kind="check" />
             <span className="eyebrow">COMPLETED</span>
             <h3>{summary.doneTasks}</h3>
           </div>
           <div>
+            <StatIcon kind="chart" />
             <span className="eyebrow">COMPLETION RATE</span>
             <h3>{summary.completionRate}%</h3>
           </div>
           <div>
+            <StatIcon kind="person" />
             <span className="eyebrow">HOURS TRACKED</span>
             <h3>{summary.totalHours}h</h3>
           </div>
@@ -258,7 +318,7 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
             <section className="rpt-section">
               <h2>Sprint reports</h2>
               <p className="rpt-empty">
-                Create and start a sprint to see its burndown, burnup and sprint report.
+                Create and start a sprint to see its burndown, burnout and sprint report.
               </p>
             </section>
           ) : (
@@ -289,18 +349,22 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
                   <>
                     <div className="project-info-card" style={{ marginBottom: 16 }}>
                       <div>
+                        <StatIcon kind="calendar" />
                         <span className="eyebrow">COMMITTED</span>
                         <h3>{report.committedPoints} pts</h3>
                       </div>
                       <div>
+                        <StatIcon kind="check" />
                         <span className="eyebrow">COMPLETED</span>
                         <h3>{report.completedPoints} pts</h3>
                       </div>
                       <div>
+                        <StatIcon kind="chart" />
                         <span className="eyebrow">TOTAL SCOPE</span>
                         <h3>{report.totalScopePoints} pts</h3>
                       </div>
                       <div>
+                        <StatIcon kind="swap" />
                         <span className="eyebrow">SCOPE CHANGES</span>
                         <h3>{report.scopeChanges.length}</h3>
                       </div>
@@ -372,9 +436,30 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
                     <BurndownChart days={series.days} />
                   </section>
                   <section className="rpt-section">
-                    <h2>Burnup</h2>
-                    <p className="rpt-sub">Completed points against the total scope.</p>
-                    <BurnupChart days={series.days} />
+                    <h2>Burnout</h2>
+                    <p className="rpt-sub">
+                      Hours tracked per person this sprint, against a {burnout ? formatHours(burnout.limitHours) : "40h"} limit.
+                    </p>
+                    {burnout && burnout.people.length > 0 ? (
+                      <>
+                        <BurnoutChart report={burnout} />
+                        {burnout.people.filter((p) => p.note).length > 0 && (
+                          <ul className="rpt-flags">
+                            {burnout.people
+                              .filter((p) => p.note)
+                              .map((p) => (
+                                <li key={p.userId} className={`rpt-flag rpt-flag-${p.level}`}>
+                                  <strong>{p.name}:</strong> {p.note}
+                                </li>
+                              ))}
+                          </ul>
+                        )}
+                      </>
+                    ) : (
+                      <p className="rpt-empty">
+                        No time has been tracked on this sprint yet. Hours appear here once the team starts the task timer.
+                      </p>
+                    )}
                   </section>
                 </div>
               )}
@@ -475,18 +560,22 @@ function MyReports({ projectId }: { projectId: string }) {
     <>
       <div className="project-info-card">
         <div>
+          <StatIcon kind="person" />
           <span className="eyebrow">MY TASKS</span>
           <h3>{totals.tasks}</h3>
         </div>
         <div>
+          <StatIcon kind="chart" />
           <span className="eyebrow">IN PROGRESS</span>
           <h3>{totals.inProgress}</h3>
         </div>
         <div>
+          <StatIcon kind="check" />
           <span className="eyebrow">COMPLETED</span>
           <h3>{totals.done}</h3>
         </div>
         <div>
+          <StatIcon kind="clock" />
           <span className="eyebrow">TIME TRACKED</span>
           <h3 className="rpt-time">{formatTime(report.time.totalSeconds)}</h3>
         </div>

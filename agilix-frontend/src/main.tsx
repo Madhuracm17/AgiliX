@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import './theme-colors.css'
 import AuthGate from './auth/AuthGate.tsx'
 import { installAuthFetch } from './auth/authFetch.ts'
 
