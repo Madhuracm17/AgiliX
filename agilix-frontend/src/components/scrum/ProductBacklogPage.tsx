@@ -1,14 +1,17 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { usePendingDeletes } from "../approvals/usePendingDeletes";
 import { useProjectPeople } from "../team/useProjectPeople";
 import { getSprints, type Sprint } from "../../api/sprints";
 import {
   TASK_TYPES,
   addTaskToSprint,
   createTask,
+  deleteTask,
   getBacklogTasks,
   getTasks,
+  isPendingApproval,
   updateTask,
   type Task,
   type TaskPriority,
@@ -72,6 +75,7 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
   const { user } = useAuth();
   // Changing a task's priority after it exists is for managers and admins.
   const canEditPlan = canEditTaskPlan(user.role);
+  const { pendingDeleteIds, markRequested } = usePendingDeletes(projectId, !canEditPlan);
   // The project team, for the "Assignee" dropdown (admins and managers only).
   const people = useProjectPeople(canEditPlan ? projectId : undefined);
   const navigate = useNavigate();
@@ -80,6 +84,8 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
   const location = useLocation();
   const cameFromBoard =
     (location.state as { from?: string } | null)?.from === "scrum-board";
+  // /backlog?task=<id> (from My Tasks) opens that task's row.
+  const [searchParams] = useSearchParams();
 
   const [backlog, setBacklog] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -89,7 +95,7 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
   const [toggledSprints, setToggledSprints] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(searchParams.get("task"));
 
   // "Add a task" chooser and the AI suggestion buttons.
   const [addMode, setAddMode] = useState<AddMode>(null);
@@ -190,6 +196,27 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
     }
   };
 
+  // Managers and admins delete the task at once; developers and testers send a
+  // request that a manager has to approve.
+  const removeTask = async (task: Task) => {
+    const question = canEditPlan
+      ? `Delete “${task.title}”? This cannot be undone.`
+      : `Ask a manager to delete “${task.title}”?`;
+    if (!window.confirm(question)) return;
+    try {
+      const result = await deleteTask(task._id);
+      if (isPendingApproval(result)) {
+        markRequested(task._id);
+        alert(result.message);
+        return;
+      }
+      setOpenTaskId(null);
+      await load(true);
+    } catch (err) {
+      alert(readError(err, "Failed to delete the task"));
+    }
+  };
+
   // Turns an AI suggestion into a real task — only when the user clicks
   // "Add to Sprint" or "Add to Backlog". sprintId = null means the backlog.
   const addSuggestion = async (suggestion: TaskSuggestion, sprintId: string | null) => {
@@ -198,13 +225,23 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
     try {
       setAddingSuggestion(key);
       setPickingSprintFor(null);
-      const task = await createTask({
+      const created = await createTask({
         title: suggestion.title,
         description: suggestion.description,
         priority: suggestion.priority,
         project: projectId,
       });
-      if (sprintId) await addTaskToSprint(task._id, sprintId);
+
+      // Developers and testers need a manager's approval: nothing is created yet.
+      if (isPendingApproval(created)) {
+        setAddedSuggestions((prev) => ({
+          ...prev,
+          [key]: "Sent to a manager for approval",
+        }));
+        return;
+      }
+
+      if (sprintId) await addTaskToSprint(created._id, sprintId);
 
       const sprint = sprints.find((s) => s._id === sprintId);
       setAddedSuggestions((prev) => ({
@@ -595,6 +632,36 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                                   />
 
                                   {renderTaskTools?.(task)}
+
+                                  <div className="task-delete-row">
+                                    {canEditPlan || task.status === "todo" ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="task-delete-button"
+                                          onClick={() => removeTask(task)}
+                                          disabled={!canEditPlan && pendingDeleteIds.has(task._id)}
+                                        >
+                                          {canEditPlan
+                                            ? "Delete task"
+                                            : pendingDeleteIds.has(task._id)
+                                              ? "Deletion requested"
+                                              : "Request deletion"}
+                                        </button>
+                                        {!canEditPlan && (
+                                          <span>
+                                            {pendingDeleteIds.has(task._id)
+                                              ? "Waiting for a manager."
+                                              : "A manager has to approve it."}
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span>
+                                        Deletion can only be requested while a task is in To Do.
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
                             </tr>

@@ -372,3 +372,17 @@ select {
 .dash-empty {
   border-radius: 12px;
 }
+
+/* The summary boxes along the top of a page (dashboard, project details, reports): a thicker border */
+.dash-stat,
+.dash-panel .dash-stat,
+.project-info-card > div {
+  border-width: 3px;
+}
+
+/* The "← Project" style back links sit a little further left than the heading below them */
+@media (min-width: 700px) {
+  .breadcrumb-link {
+    margin-left: -14px;
+  }
+}

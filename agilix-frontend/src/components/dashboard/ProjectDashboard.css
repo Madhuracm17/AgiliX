@@ -262,3 +262,34 @@
     border-radius: 14px;
   }
 }
+
+/* A task in "My Tasks" opens that task. */
+.dash-task-link {
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.dash-task-link:hover,
+.dash-task-link:focus-visible {
+  background: #f4efdf;
+  outline: none;
+}
+
+/* AI explanation: one line, with the full text on hover. */
+.dash-ai-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.dash-ai-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-ai-line .dash-link {
+  flex: none;
+  white-space: nowrap;
+}

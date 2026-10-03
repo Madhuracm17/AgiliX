@@ -32,6 +32,8 @@ export interface Task {
   assignee?: User | null;
   storyPoints?: number;
   type?: TaskType | null;
+  /** Left by a tester who sent the task back from Review to In Progress. */
+  reviewNote?: { text: string; byName: string; at: string } | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -55,6 +57,27 @@ export interface UpdateTaskData {
   assignee?: string | null;
   storyPoints?: number;
   type?: TaskType;
+  /** Required when a tester sends a task back from Review to In Progress. */
+  reviewComment?: string;
+}
+
+/**
+ * What the backend answers when a developer or tester asks to create or delete a
+ * task: nothing has changed yet, a manager has to approve it first.
+ */
+export interface PendingApproval {
+  pendingApproval: true;
+  requestId: string;
+  message: string;
+}
+
+/** True when the answer is "sent to a manager" instead of the task itself. */
+export function isPendingApproval(result: unknown): result is PendingApproval {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as { pendingApproval?: unknown }).pendingApproval === true
+  );
 }
 
 export interface SprintStats {
@@ -84,8 +107,9 @@ export function getSprintStats(sprintId: string) {
   return api<SprintStats>(`/tasks/sprint/${sprintId}/stats`);
 }
 
+/** Managers and admins get the new task; developers and testers get a PendingApproval. */
 export function createTask(data: CreateTaskData) {
-  return api<Task>("/tasks", {
+  return api<Task | PendingApproval>("/tasks", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -101,5 +125,12 @@ export function updateTask(id: string, data: UpdateTaskData) {
 export function addTaskToSprint(taskId: string, sprintId: string) {
   return api<Task>(`/tasks/${taskId}/sprint/${sprintId}`, {
     method: "PATCH",
+  });
+}
+
+/** Managers and admins delete the task; developers and testers get a PendingApproval. */
+export function deleteTask(id: string) {
+  return api<{ deleted: true } | PendingApproval>(`/tasks/${id}`, {
+    method: "DELETE",
   });
 }

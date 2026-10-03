@@ -64,6 +64,11 @@ export class Task {
   @Prop({ type: Date, default: null })
   addedToSprintAt?: Date | null;
 
+  // The comment a tester left when sending the task back from Review to In
+  // Progress. Cleared when the task goes to Review again or is Done.
+  @Prop({ type: Object, default: null })
+  reviewNote?: { text: string; by: string; byName: string; at: Date } | null;
+
   // Optional: older tasks simply have no type.
   @Prop({ type: String, enum: TaskType })
   type?: TaskType;

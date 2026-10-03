@@ -1,4 +1,4 @@
-import { IsEnum, IsIn, IsMongoId, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsIn, IsMongoId, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
 import { TaskPriority, TaskStatus, TaskType } from '../schemas/task.schema';
 import { STORY_POINT_SCALE, STORY_POINT_SCALE_MESSAGE } from '../story-points';
 
@@ -35,4 +35,11 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsEnum(TaskType)
   type?: TaskType;
+
+  // Required when a tester sends a task back from Review to In Progress.
+  // Not stored as a field of its own: it becomes the task's reviewNote.
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reviewComment?: string;
 }

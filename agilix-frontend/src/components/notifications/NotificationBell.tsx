@@ -4,6 +4,7 @@ import { useAuth } from "../../auth/auth-context";
 import { getProjects } from "../../api/projects";
 import { getTasks } from "../../api/tasks";
 import { getSprints } from "../../api/sprints";
+import { getNotifications } from "../../api/notifications";
 import { timeAgo } from "../scrum/taskDisplay";
 import {
   buildNotifications,
@@ -67,7 +68,17 @@ export default function NotificationBell() {
           return { project, tasks, sprints };
         })
       );
-      setItems(buildNotifications(user, data));
+      // Messages saved by the backend (sent-back tasks, approval requests and answers).
+      const saved: AppNotification[] = (await getNotifications().catch(() => [])).map(
+        (n) => ({
+          key: `saved:${n._id}`,
+          text: n.text,
+          detail: n.detail || "",
+          link: n.link || "/dashboard",
+          at: n.createdAt,
+        })
+      );
+      setItems(buildNotifications(user, data, saved));
     } catch {
       // The bell is optional; if loading fails it just stays as it was.
     }
