@@ -1,14 +1,19 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/jwt-config';
+import { AccessService } from '../auth/access.service';
 import { requireRole } from '../auth/roles';
 import { UserRole } from '../users/schemas/user.schema';
 
 @Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(
+    private readonly projectsService: ProjectsService,
+    private readonly access: AccessService,
+  ) {}
 
   /** Admins and managers. Whoever creates the project becomes its owner. */
   @Post()
@@ -28,6 +33,24 @@ export class ProjectsController {
     return this.projectsService.withPeople(await this.projectsService.findOne(id, user));
   }
 
+  /** Admins and managers: rename the project, change its description or its status. */
+  @Patch(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateProjectDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    requireRole(user, 'You do not have permission to edit projects. Please contact an admin or a manager.', UserRole.ADMIN, UserRole.MANAGER);
+    return this.projectsService.withPeople(await this.projectsService.update(id, dto, user));
+  }
+
+  /** Admins, or the manager who owns the project. Also deletes its tasks, sprints and time entries. */
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    requireRole(user, 'You do not have permission to delete projects. Please contact an admin or the project owner.', UserRole.ADMIN, UserRole.MANAGER);
+    return this.projectsService.remove(id, user);
+  }
+
   /** Admins and managers: choose who is on the team. */
   @Patch(':id/members/:userId')
   async addMember(
@@ -36,6 +59,7 @@ export class ProjectsController {
     @CurrentUser() user: AuthUser,
   ) {
     requireRole(user, 'You do not have permission to manage team members. Please contact an admin or a manager.', UserRole.ADMIN, UserRole.MANAGER);
+    await this.access.assertProject(user, id);
     return this.projectsService.withPeople(await this.projectsService.addMember(id, userId));
   }
 
@@ -47,6 +71,7 @@ export class ProjectsController {
     @CurrentUser() user: AuthUser,
   ) {
     requireRole(user, 'You do not have permission to manage team members. Please contact an admin or a manager.', UserRole.ADMIN, UserRole.MANAGER);
+    await this.access.assertProject(user, id);
     return this.projectsService.withPeople(await this.projectsService.removeMember(id, userId));
   }
 }

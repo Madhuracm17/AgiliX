@@ -5,6 +5,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '../users/schemas/user.schema';
 import { AuthUser, JWT_ALGORITHM, JwtConfig, JwtPayload } from './jwt-config';
@@ -32,6 +34,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly jwtConfig: JwtConfig,
     private readonly reflector: Reflector,
+    @InjectConnection() private readonly connection: Connection,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -65,7 +68,19 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Your login has expired or is invalid. Please log in again');
     }
 
-    request.user = { userId: payload.sub, role: payload.role };
+    // The role is read from the database on every request, so a role change by an
+    // admin works straight away (no re-login), and a deleted account stops working.
+    const account = (await this.connection
+      .model('User')
+      .findById(payload.sub)
+      .select('role')
+      .lean()
+      .exec()) as { role?: string } | null;
+    if (!account || !ROLES.has(String(account.role))) {
+      throw new UnauthorizedException('This account no longer exists. Please log in again');
+    }
+
+    request.user = { userId: payload.sub, role: account.role as UserRole };
     return true;
   }
 }

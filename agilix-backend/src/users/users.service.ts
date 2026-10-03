@@ -91,8 +91,8 @@ export class UsersService {
 
   /**
    * Changes a user's role. An admin cannot change their own role, so the
-   * workspace can never be left without an admin. The person's current login
-   * keeps the old role until they log in again.
+   * workspace can never be left without an admin. The new role applies from the
+   * person's next request (the role is read from the database, not the token).
    */
   async setRole(id: string, role: UserRole, actingUserId: string): Promise<User> {
     if (id === actingUserId) {

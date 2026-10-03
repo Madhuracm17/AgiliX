@@ -16,6 +16,8 @@ import NewTaskPage from "./components/scrum/NewTaskPage";
 import ProjectTeamPage from "./components/team/ProjectTeamPage";
 import ReportsPage from "./components/reports/ReportsPage";
 import ProjectCard from "./components/projects/ProjectCard";
+import ProjectSettings from "./components/projects/ProjectSettings";
+import { PROJECT_STATUS_LABELS, type ProjectStatus } from "./api/projects";
 import "./components/team/team.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -34,6 +36,7 @@ type Project = {
   owner?: User;
   members?: User[];
   methodology?: "scrum" | "kanban";
+  status?: ProjectStatus;
 };
 
 type Task = {
@@ -87,6 +90,7 @@ const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
 const ACTIVITY_EVENTS = ["mousemove", "keydown", "click", "scroll", "touchstart"];
 
 function TaskTimer({ task }: { task: Task }) {
+  const { user: currentUser } = useAuth();
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [totalSeconds, setTotalSeconds] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -103,18 +107,12 @@ function TaskTimer({ task }: { task: Task }) {
   const loadIdRef = useRef(0);
 
   const load = async () => {
-    if (!task.assignee) {
-      setLoading(false);
-      return;
-    }
-
     const requestId = ++loadIdRef.current;
 
     try {
       const [activeRes, totalRes] = await Promise.all([
-        fetch(
-          `${API_URL}/time-entries/task/${task._id}/active?user=${task.assignee._id}`
-        ),
+        // The server returns the logged-in user's own running timer on this task.
+        fetch(`${API_URL}/time-entries/task/${task._id}/active`),
         fetch(`${API_URL}/time-entries/task/${task._id}/total`),
       ]);
 
@@ -203,16 +201,11 @@ function TaskTimer({ task }: { task: Task }) {
   }, [activeEntryId]);
 
   const start = async () => {
-    if (!task.assignee) return;
-
+    // The time is saved for whoever is logged in; the server decides that, not this page.
     const response = await fetch(`${API_URL}/time-entries/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        task: task._id,
-        project: task.project,
-        user: task.assignee._id,
-      }),
+      body: JSON.stringify({ task: task._id }),
     });
 
     if (response.ok) {
@@ -252,8 +245,19 @@ function TaskTimer({ task }: { task: Task }) {
 
   if (loading) return null;
 
+  // Only the person a task is assigned to can time it (the server enforces this too).
+  const isMine = !!task.assignee && task.assignee._id === currentUser._id;
   if (!task.assignee) {
     return <span className="timer-hint">Assign someone to track time</span>;
+  }
+
+  // A finished task needs no timer, and nobody else can time it: only the time spent is shown.
+  if (task.status === "done" || !isMine) {
+    return (
+      <div className="task-timer">
+        <span className="timer-total">Total: {formatDuration(totalSeconds)}</span>
+      </div>
+    );
   }
 
   if (pausedByInactivity) {
@@ -290,6 +294,21 @@ function TaskTimer({ task }: { task: Task }) {
   );
 }
 
+/**
+ * The reason a request failed, in the server's own words when it gave one
+ * (for example "You do not have access to this project..."), otherwise the fallback.
+ */
+async function failureMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: unknown };
+    const message = Array.isArray(body.message) ? body.message.join(", ") : body.message;
+    if (typeof message === "string" && message) return message;
+  } catch {
+    // The body was not JSON; use the fallback below.
+  }
+  return fallback;
+}
+
 function ProjectsPage() {
   const { user: currentUser } = useAuth();
   // Admins and managers create projects (the backend enforces this too).
@@ -319,7 +338,12 @@ function ProjectsPage() {
       const response = await fetch(`${API_URL}/projects`);
 
       if (!response.ok) {
-        throw new Error("Failed to load projects");
+        throw new Error(
+          await failureMessage(
+            response,
+            "We could not load your projects. Please check your connection and try again.",
+          ),
+        );
       }
 
       const data = await response.json();
@@ -715,7 +739,12 @@ function ProjectOverviewPage() {
       const response = await fetch(`${API_URL}/projects/${projectId}`);
 
       if (!response.ok) {
-        throw new Error("Failed to load project");
+        throw new Error(
+          await failureMessage(
+            response,
+            "We could not load this project. Please try again.",
+          ),
+        );
       }
 
       setProject(await response.json());
@@ -772,6 +801,12 @@ function ProjectOverviewPage() {
         </button>
       </div>
 
+      <ProjectSettings
+        project={project}
+        onSaved={setProject}
+        onDeleted={() => navigate("/projects")}
+      />
+
       <div className="project-info-card">
         <div>
           <span className="eyebrow">OWNER</span>
@@ -787,8 +822,14 @@ function ProjectOverviewPage() {
 
         <div>
           <span className="eyebrow">PROJECT STATUS</span>
-          <h3>Active</h3>
-          <p>Currently in development</p>
+          <h3>{PROJECT_STATUS_LABELS[project.status ?? "active"]}</h3>
+          <p>
+            {(project.status ?? "active") === "on_hold"
+              ? "Work is paused"
+              : (project.status ?? "active") === "completed"
+                ? "Work is finished"
+                : "Currently in development"}
+          </p>
         </div>
 
         <div>
@@ -990,7 +1031,9 @@ function AiInsightsPage() {
         );
 
         if (!response.ok) {
-          throw new Error("Failed to load sprints");
+          throw new Error(
+            await failureMessage(response, "We could not load the sprints. Please try again."),
+          );
         }
 
         const data: Sprint[] = await response.json();
@@ -1154,7 +1197,9 @@ function KanbanBoardPage() {
       ]);
 
       if (!taskRes.ok) {
-        throw new Error("Failed to load board");
+        throw new Error(
+          await failureMessage(taskRes, "We could not load the board. Please try again."),
+        );
       }
 
       setTasks(await taskRes.json());
@@ -1408,13 +1453,23 @@ function KanbanBoardPage() {
 
 // First page after login (Figma "Dashboard"): totals across all my projects.
 function DashboardPage() {
+  const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
+  const canCreateProjects = currentUser.role === "admin" || currentUser.role === "manager";
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     fetch(`${API_URL}/projects`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Failed to load projects");
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(
+            await failureMessage(
+              response,
+              "We could not load your projects. Please check your connection and try again.",
+            ),
+          );
+        }
         return response.json() as Promise<Project[]>;
       })
       .then(setProjects)
@@ -1435,6 +1490,23 @@ function DashboardPage() {
     return (
       <div className="empty-state">
         <h2>Loading dashboard...</h2>
+      </div>
+    );
+  }
+  if (projects.length === 0) {
+    return (
+      <div className="empty-state">
+        <h2>No projects yet</h2>
+        <p>
+          {canCreateProjects
+            ? "Create your first project to see your dashboard."
+            : "You are not on any project yet. Ask an admin or a manager to add you to one."}
+        </p>
+        {canCreateProjects && (
+          <button className="primary-button" onClick={() => navigate("/projects")}>
+            Go to Projects
+          </button>
+        )}
       </div>
     );
   }

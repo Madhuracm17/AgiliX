@@ -58,10 +58,13 @@ export class TasksService {
     return this.taskModel.find({ sprint: sprintId }).populate('assignee', 'name email').exec();
   }
 
-  /** `role` is left out by internal callers (the AI services), which skip the sign-off check. */
-  async update(id: string, dto: UpdateTaskDto, role?: UserRole) {
+  /**
+   * `role` and `userId` are left out by internal callers (the AI services), which
+   * skip the sign-off and "only the assignee" checks.
+   */
+  async update(id: string, dto: UpdateTaskDto, role?: UserRole, userId?: string) {
     if (dto.status !== undefined) {
-      await this.checkStatusFlow(id, dto.status, role);
+      await this.checkStatusFlow(id, dto.status, role, userId);
     }
 
     // Keep the dates the Scrum reports need: when it became Done, and when it
@@ -76,7 +79,24 @@ export class TasksService {
 
     const task = await this.taskModel.findByIdAndUpdate(id, changes, { new: true });
     if (!task) throw new NotFoundException('Task not found');
+
+    // A finished task needs no timer: stop any that are still running so the
+    // hours stop counting the moment the task becomes Done.
+    if (dto.status === TaskStatus.DONE) await this.stopRunningTimers(id);
     return task;
+  }
+
+  private async stopRunningTimers(taskId: string) {
+    const TimeEntry = this.taskModel.db.model('TimeEntry');
+    const running: any[] = await TimeEntry.find({ task: taskId, endTime: null });
+    const now = new Date();
+    await Promise.all(
+      running.map((entry) => {
+        entry.endTime = now;
+        entry.durationSeconds = Math.round((now.getTime() - new Date(entry.startTime).getTime()) / 1000);
+        return entry.save();
+      }),
+    );
   }
 
   /**
@@ -84,12 +104,12 @@ export class TasksService {
    * Review → Done, one step at a time. Tasks without a sprint (backlog and
    * Kanban tasks) are not affected, so the Kanban board works as before.
    */
-  private async checkStatusFlow(id: string, status: TaskStatus, role?: UserRole) {
+  private async checkStatusFlow(id: string, status: TaskStatus, role?: UserRole, userId?: string) {
     if (!OBJECT_ID_PATTERN.test(id)) {
       throw new BadRequestException('Invalid task id');
     }
 
-    const current = await this.taskModel.findById(id).select('status sprint');
+    const current = await this.taskModel.findById(id).select('status sprint assignee');
     if (!current) throw new NotFoundException('Task not found');
     if (!current.sprint || current.status === status) return;
 
@@ -104,8 +124,22 @@ export class TasksService {
         `Sprint tasks move one step at a time: ${STATUS_LABELS[current.status]} → ${STATUS_LABELS[next]}.`,
       );
     }
-    if (status === TaskStatus.DONE && role && !CAN_MARK_DONE.includes(role)) {
-      throw new ForbiddenException('A task can only be marked Done by a tester, manager or admin. Please ask a tester to review it.');
+    if (status === TaskStatus.DONE) {
+      if (role && !CAN_MARK_DONE.includes(role)) {
+        throw new ForbiddenException('A task can only be marked Done by a tester, manager or admin. Please ask a tester to review it.');
+      }
+      return;
+    }
+
+    // To Do → In Progress → Review is the assignee's own work: nobody else moves it,
+    // not even a manager or an admin.
+    if (userId) {
+      if (!current.assignee) {
+        throw new ForbiddenException('This task has no assignee yet. Assign it to someone before moving it.');
+      }
+      if (String(current.assignee) !== userId) {
+        throw new ForbiddenException('Only the person this task is assigned to can move it to In Progress or Review.');
+      }
     }
   }
 

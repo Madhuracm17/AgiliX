@@ -542,7 +542,13 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                                       </label>
                                     )}
 
-                                    {openSprints.length > 0 && (
+                                    {openSprints.length > 0 && !canEditPlan && task.assignee && !sameId(task.assignee, user._id) && (
+                                      <p className="new-task-hint">
+                                        Assigned to {task.assignee.name}. Only they or a manager can add it to a sprint.
+                                      </p>
+                                    )}
+
+                                    {openSprints.length > 0 && (canEditPlan || !task.assignee || sameId(task.assignee, user._id)) && (
                                       <label>
                                         Sprint
                                         <select

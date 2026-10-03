@@ -74,6 +74,19 @@ export class SprintsService {
       throw new BadRequestException('A completed sprint cannot be started again');
     }
 
+    // A sprint cannot start before its start date. Whole days are compared (in the
+    // server's time zone), so it can start at any time on the start date itself.
+    if (calendarDay(sprint.startDate) > calendarDay(new Date())) {
+      const when = new Date(sprint.startDate).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      throw new BadRequestException(
+        `This sprint cannot start before its start date (${when}). Wait until then, or edit the sprint's start date.`,
+      );
+    }
+
     const alreadyActive = await this.sprintModel.findOne({
       project: sprint.project,
       status: SprintStatus.ACTIVE,
@@ -192,6 +205,13 @@ function assertObjectId(value: string, label: string): void {
 }
 
 /** The end date must be on or after the start date. */
+/** The calendar day of a date as YYYY-MM-DD in the server's time zone, so days compare as text. */
+function calendarDay(date: string | Date): string {
+  const d = new Date(date);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function assertValidDateRange(start: string | Date, end: string | Date): void {
   const startTime = new Date(start).getTime();
   const endTime = new Date(end).getTime();

@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { isValidObjectId, Model } from 'mongoose';
 import { TimeEntry, TimeEntryDocument } from './schemas/time-entry.schema';
-import { StartTimerDto } from './dto/start-timer.dto';
 
 @Injectable()
 export class TimeEntriesService {
@@ -10,11 +14,12 @@ export class TimeEntriesService {
     @InjectModel(TimeEntry.name) private timeEntryModel: Model<TimeEntryDocument>,
   ) {}
 
-  async start(dto: StartTimerDto) {
+  /** The time is always saved for `userId`, the person who is logged in. */
+  async start(taskId: string, projectId: string, userId: string) {
     // Only one running timer per user per task at a time.
     const running = await this.timeEntryModel.findOne({
-      task: dto.task,
-      user: dto.user,
+      task: taskId,
+      user: userId,
       endTime: null,
     });
 
@@ -24,12 +29,21 @@ export class TimeEntriesService {
       );
     }
 
-    return new this.timeEntryModel({ ...dto, startTime: new Date() }).save();
+    return new this.timeEntryModel({
+      task: taskId,
+      project: projectId,
+      user: userId,
+      startTime: new Date(),
+    }).save();
   }
 
-  async stop(id: string) {
+  async stop(id: string, userId: string) {
+    if (!isValidObjectId(id)) throw new BadRequestException('Invalid time entry id');
     const entry = await this.timeEntryModel.findById(id);
     if (!entry) throw new NotFoundException('Time entry not found');
+    if (String(entry.user) !== userId) {
+      throw new ForbiddenException('You can only stop your own timer.');
+    }
     if (entry.endTime) {
       throw new BadRequestException('This timer is already stopped');
     }

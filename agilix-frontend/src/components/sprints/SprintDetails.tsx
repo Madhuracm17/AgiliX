@@ -78,6 +78,16 @@ export default function SprintDetails({
     }
   };
 
+  // A planned sprint cannot start before its start date (the server checks this too).
+  const dayKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const startsLater = dayKey(new Date(sprint.startDate)) > dayKey(new Date());
+  const startDateText = new Date(sprint.startDate).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
   const handleStart = () =>
     run(async () => {
       await startSprint(sprint._id);
@@ -161,8 +171,17 @@ export default function SprintDetails({
             <button type="button" className="secondary-button" onClick={openEdit} disabled={busy}>
               Edit
             </button>
+            {sprint.status === "planned" && startsLater && (
+              <span className="sprint-details-muted">Can start on {startDateText}</span>
+            )}
             {sprint.status === "planned" && (
-              <button type="button" className="primary-button" onClick={handleStart} disabled={busy}>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleStart}
+                disabled={busy || startsLater}
+                title={startsLater ? `This sprint can start on ${startDateText}` : undefined}
+              >
                 {busy ? "Starting…" : "Start Sprint"}
               </button>
             )}

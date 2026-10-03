@@ -26,6 +26,7 @@ import {
   nextStatus,
   priorityLabel,
   readError,
+  sameId,
   sprintLabel,
   statusLabel,
   typeLabel,
@@ -120,12 +121,18 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   // Completed sprints are a record: their board can no longer be changed.
   const sprintIsLocked = selectedSprint?.status === "completed";
 
+  // To Do → In Progress → Review is the assignee's own work, so only they can do it
+  // (not even a manager). Review → Done is the sign-off by a tester, manager or admin.
+  const isAssignee = (task: Task) => sameId(task.assignee, user._id);
+  const canMove = (task: Task, status: TaskStatus) =>
+    status === "done" ? signOff : isAssignee(task);
+
   // Moves a task one step forward (To Do → In Progress → Review → Done).
   // Any other move is ignored here and also rejected by the backend.
   const moveTask = async (taskId: string, status: TaskStatus) => {
     const task = sprintTasks.find((t) => t._id === taskId);
     if (!task || sprintIsLocked || nextStatus(task.status) !== status) return;
-    if (status === "done" && !signOff) return;
+    if (!canMove(task, status)) return;
 
     // Optimistic update; stats are refetched afterwards.
     setSprintTasks((prev) =>
@@ -210,7 +217,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
     !sprintIsLocked &&
     draggingTask !== null &&
     nextStatus(draggingTask.status) === status &&
-    (status !== "done" || signOff);
+    canMove(draggingTask, status);
 
   const onDrop = (event: DragEvent, status: TaskStatus) => {
     event.preventDefault();
@@ -425,7 +432,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                         draggable={
                           !sprintIsLocked &&
                           task.status !== "done" &&
-                          (task.status !== "review" || signOff)
+                          (task.status === "review" ? signOff : isAssignee(task))
                         }
                         onDragStart={(e) => onDragStart(e, task)}
                         onDragEnd={onDragEnd}
@@ -482,6 +489,12 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                               <p className="scrum-card-final scrum-card-waiting">
                                 Waiting for a tester to sign off
                               </p>
+                            ) : task.status !== "review" && task.status !== "done" && !isAssignee(task) ? (
+                              <p className="scrum-card-final scrum-card-waiting">
+                                {task.assignee
+                                  ? `Only ${task.assignee.name ?? "the assignee"} can move this task`
+                                  : "Assign this task before moving it"}
+                              </p>
                             ) : nextStatus(task.status) ? (
                               <button
                                 type="button"
@@ -498,7 +511,8 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                             )}
 
                             {/* Only work that hasn't reached Review can go back to the backlog. */}
-                            {(task.status === "todo" || task.status === "in_progress") && (
+                            {(task.status === "todo" || task.status === "in_progress") &&
+                              (!task.assignee || isAssignee(task)) && (
                               <button
                                 type="button"
                                 className="sprint-card-backlog-button"
