@@ -8,22 +8,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { Project, ProjectDocument } from './schemas/project.schema';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
 import { AuthUser } from '../auth/jwt-config';
 import { UserRole } from '../users/schemas/user.schema';
-
-/** The two fields that decide who may see a project. */
-interface ProjectAccess {
-  _id: unknown;
-  owner?: unknown;
-  members?: unknown[];
-}
-
-/** True when the user owns the project or is on its member list. */
-function belongsTo(project: ProjectAccess, userId: string): boolean {
-  // Ids are compared as text because older records may store them as strings.
-  if (project.owner != null && String(project.owner) === userId) return true;
-  return (project.members ?? []).some((m) => String(m) === userId);
-}
+import { belongsTo } from '../auth/access.service';
 
 @Injectable()
 export class ProjectsService {
@@ -99,8 +87,54 @@ export class ProjectsService {
     return Array.isArray(input) ? out : out[0];
   }
 
+  /** Edit the name, description or status. `user` must belong to the project (or be an admin). */
+  async update(id: string, dto: UpdateProjectDto, user: AuthUser) {
+    await this.findOne(id, user);
+    const changes: Record<string, unknown> = {};
+    if (dto.name !== undefined) changes.name = dto.name.trim();
+    if (dto.description !== undefined) changes.description = dto.description.trim();
+    if (dto.status !== undefined) changes.status = dto.status;
+    const project = await this.projectModel.findByIdAndUpdate(id, changes, { new: true });
+    if (!project) throw new NotFoundException('Project not found');
+    return project;
+  }
+
+  /**
+   * Deletes the project together with its tasks, sprints and time entries.
+   * Admins can delete any project; a manager can delete only a project they own.
+   * Ids may be stored as ObjectIds or as plain text, so both forms are matched.
+   */
+  async remove(id: string, user: AuthUser) {
+    if (!isValidObjectId(id)) throw new BadRequestException('Invalid project id');
+    const project = await this.projectModel.findById(id).select('owner').lean().exec();
+    if (!project) throw new NotFoundException('Project not found');
+    if (user.role !== UserRole.ADMIN && String(project.owner) !== user.userId) {
+      throw new ForbiddenException(
+        'Only an admin or the project owner can delete a project.',
+      );
+    }
+
+    const match = { project: { $in: [new Types.ObjectId(id), id] } } as never;
+    const db = this.projectModel.db;
+    const [tasks, sprints, entries] = await Promise.all([
+      db.model('Task').collection.deleteMany(match),
+      db.model('Sprint').collection.deleteMany(match),
+      db.model('TimeEntry').collection.deleteMany(match),
+    ]);
+    await this.projectModel.deleteOne({ _id: id });
+    return {
+      deleted: true,
+      tasks: tasks.deletedCount,
+      sprints: sprints.deletedCount,
+      timeEntries: entries.deletedCount,
+    };
+  }
+
   async addMember(projectId: string, userId: string) {
     if (!isValidObjectId(userId)) throw new BadRequestException('Invalid user id');
+    if (!(await this.projectModel.db.model('User').exists({ _id: userId }))) {
+      throw new NotFoundException('That person does not exist');
+    }
     const project = await this.projectModel.findByIdAndUpdate(
       projectId,
       { $addToSet: { members: userId } },

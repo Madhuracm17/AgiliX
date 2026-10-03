@@ -5,6 +5,7 @@ import { UpdateSprintDto } from './dto/update-sprint.dto';
 import { CompleteSprintDto } from './dto/complete-sprint.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/jwt-config';
+import { AccessService } from '../auth/access.service';
 import { requireRole } from '../auth/roles';
 import { UserRole } from '../users/schemas/user.schema';
 
@@ -12,35 +13,43 @@ const SPRINT_MESSAGE = 'You do not have permission to manage sprints. Please con
 
 @Controller('sprints')
 export class SprintsController {
-  constructor(private readonly sprintsService: SprintsService) {}
+  constructor(
+    private readonly sprintsService: SprintsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post()
-  create(@Body() dto: CreateSprintDto, @CurrentUser() user: AuthUser) {
+  async create(@Body() dto: CreateSprintDto, @CurrentUser() user: AuthUser) {
     requireRole(user, SPRINT_MESSAGE, UserRole.ADMIN, UserRole.MANAGER);
+    await this.access.assertProject(user, dto.project);
     return this.sprintsService.create(dto);
   }
 
   @Get()
-  findAllForProject(@Query('project') project: string) {
+  async findAllForProject(@Query('project') project: string, @CurrentUser() user: AuthUser) {
+    await this.access.assertProject(user, project);
     return this.sprintsService.findAllForProject(project);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    await this.access.assertSprint(user, id);
     return this.sprintsService.findOne(id);
   }
 
   /** Edit name, goal or dates (not allowed once completed). */
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateSprintDto, @CurrentUser() user: AuthUser) {
+  async update(@Param('id') id: string, @Body() dto: UpdateSprintDto, @CurrentUser() user: AuthUser) {
     requireRole(user, SPRINT_MESSAGE, UserRole.ADMIN, UserRole.MANAGER);
+    await this.access.assertSprint(user, id);
     return this.sprintsService.update(id, dto);
   }
 
   /** planned → active (only one active sprint per project). */
   @Patch(':id/start')
-  start(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+  async start(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     requireRole(user, SPRINT_MESSAGE, UserRole.ADMIN, UserRole.MANAGER);
+    await this.access.assertSprint(user, id);
     return this.sprintsService.start(id);
   }
 
@@ -49,8 +58,9 @@ export class SprintsController {
    * { moveUnfinishedTo }, or back to the backlog when it is left out.
    */
   @Patch(':id/complete')
-  complete(@Param('id') id: string, @Body() dto: CompleteSprintDto, @CurrentUser() user: AuthUser) {
+  async complete(@Param('id') id: string, @Body() dto: CompleteSprintDto, @CurrentUser() user: AuthUser) {
     requireRole(user, SPRINT_MESSAGE, UserRole.ADMIN, UserRole.MANAGER);
+    await this.access.assertSprint(user, id);
     return this.sprintsService.complete(id, dto);
   }
 }

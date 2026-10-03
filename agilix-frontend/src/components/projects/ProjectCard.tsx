@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getTasks } from "../../api/tasks";
 import { getSprints } from "../../api/sprints";
+import { PROJECT_STATUS_LABELS, type ProjectStatus } from "../../api/projects";
 import { initialOf } from "../../auth/auth-context";
 import "./project-card.css";
 
@@ -17,6 +18,7 @@ interface ProjectCardProps {
     owner?: Person;
     members?: Person[];
     methodology?: "scrum" | "kanban";
+    status?: ProjectStatus;
   };
   onOpen: () => void;
 }
@@ -39,6 +41,8 @@ const MAX_AVATARS = 3;
  */
 export default function ProjectCard({ project, onOpen }: ProjectCardProps) {
   const isKanban = project.methodology === "kanban";
+  // The status set on the project; older projects have none and count as active.
+  const status: ProjectStatus = project.status ?? "active";
   const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
@@ -93,8 +97,8 @@ export default function ProjectCard({ project, onOpen }: ProjectCardProps) {
     <div className="project-card pcard" onClick={onOpen}>
       <div className="pcard-top">
         <h2>{project.name}</h2>
-        <span className={`pcard-status ${stats?.active ? "pcard-status-active" : ""}`}>
-          {stats?.active ? "Active" : "Pending"}
+        <span className={`pcard-status ${status === "active" ? "pcard-status-active" : ""}`}>
+          {PROJECT_STATUS_LABELS[status]}
         </span>
       </div>
 

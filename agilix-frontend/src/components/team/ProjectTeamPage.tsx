@@ -11,6 +11,11 @@ import {
 import { initials, readError, sameId } from "../scrum/taskDisplay";
 import "./team.css";
 
+/** "developer" -> "Developer", so roles read well in lists. */
+function roleLabel(role: string | undefined): string {
+  return role ? role.charAt(0).toUpperCase() + role.slice(1) : "";
+}
+
 /**
  * Team of one project. Everyone on the project can see it; only admins and managers can
  * add or remove people.
@@ -52,6 +57,9 @@ export default function ProjectTeamPage() {
   const members = project?.members ?? [];
   const isOnTeam = (id: string) =>
     sameId(project?.owner, id) || members.some((m) => sameId(m, id));
+
+  // Roles come from the people list, which only admins and managers load.
+  const roleOf = (id: string) => roleLabel(users.find((u) => sameId(u, id))?.role);
 
   // People who are registered but not yet on this project.
   const addable = users.filter((u) => !isOnTeam(u._id));
@@ -133,7 +141,7 @@ export default function ProjectTeamPage() {
               <option value="">Select a person</option>
               {addable.map((u) => (
                 <option key={u._id} value={u._id}>
-                  {u.name} ({u.email})
+                  {u.name} · {roleLabel(u.role)} · {u.email}
                 </option>
               ))}
             </select>
@@ -160,7 +168,10 @@ export default function ProjectTeamPage() {
             <div className="team-avatar">{initials(project.owner.name)}</div>
             <div className="project-team-info">
               <h2>{project.owner.name}</h2>
-              <p>{project.owner.email}</p>
+              <p>
+                {project.owner.email}
+                {roleOf(project.owner._id) && ` · ${roleOf(project.owner._id)}`}
+              </p>
             </div>
             <span className="role-badge">Owner</span>
           </div>
@@ -173,7 +184,10 @@ export default function ProjectTeamPage() {
               <div className="team-avatar">{initials(member.name)}</div>
               <div className="project-team-info">
                 <h2>{member.name}</h2>
-                <p>{member.email}</p>
+                <p>
+                  {member.email}
+                  {roleOf(member._id) && ` · ${roleOf(member._id)}`}
+                </p>
               </div>
               {isAdmin && (
                 <button

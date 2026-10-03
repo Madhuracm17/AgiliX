@@ -77,7 +77,15 @@ interface Summary {
   doneTasks: number;
   completionRate: number;
   totalHours: number;
+  // Added later: an older backend does not send these, so they may be missing.
+  todoTasks?: number;
+  inProgressTasks?: number;
+  totalStoryPoints?: number;
+  completedStoryPoints?: number;
+  sprintPace?: "on_track" | "at_risk" | "behind" | null;
 }
+
+const PACE_LABEL = { on_track: "On track", at_risk: "At risk", behind: "Behind" } as const;
 
 interface Workload {
   user: { _id: string; name: string; email: string };
@@ -86,6 +94,8 @@ interface Workload {
   tasksInProgress: number;
   hoursWorked: number;
   completionRate: number;
+  storyPointsTotal?: number;
+  storyPointsCompleted?: number;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -308,6 +318,36 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
         </div>
       )}
 
+      {summary && summary.todoTasks !== undefined && (
+        <div className="project-info-card">
+          <div>
+            <StatIcon kind="calendar" />
+            <span className="eyebrow">TO DO</span>
+            <h3>{summary.todoTasks}</h3>
+          </div>
+          <div>
+            <StatIcon kind="clock" />
+            <span className="eyebrow">IN PROGRESS</span>
+            <h3>{summary.inProgressTasks ?? 0}</h3>
+            <p>including Review</p>
+          </div>
+          <div>
+            <StatIcon kind="chart" />
+            <span className="eyebrow">STORY POINTS</span>
+            <h3>
+              {summary.completedStoryPoints ?? 0}/{summary.totalStoryPoints ?? 0}
+            </h3>
+            <p>done / total</p>
+          </div>
+          <div>
+            <StatIcon kind="person" />
+            <span className="eyebrow">SPRINT PACE</span>
+            <h3>{summary.sprintPace ? PACE_LABEL[summary.sprintPace] : "No active sprint"}</h3>
+            <p>finished work vs time passed</p>
+          </div>
+        </div>
+      )}
+
       {isScrum && (
         <>
           {!sprintsReady ? (
@@ -505,6 +545,11 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
                     <span>{w.tasksInProgress} in progress</span>
                     <span>{w.tasksCompleted} completed</span>
                     <span>{w.hoursWorked}h tracked</span>
+                    {w.storyPointsTotal !== undefined && (
+                      <span>
+                        {w.storyPointsCompleted ?? 0}/{w.storyPointsTotal} points
+                      </span>
+                    )}
                   </div>
 
                   <div className="workload-bar">

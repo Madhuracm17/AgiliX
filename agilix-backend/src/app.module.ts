@@ -10,6 +10,7 @@ import { TimeEntriesModule } from './time-entries/time-entries.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
 import { ReportsModule } from './reports/reports.module';
+import { AccessModule } from './auth/access.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ReportsModule } from './reports/reports.module';
     AnalyticsModule,
     AuthModule,
     ReportsModule,
+    AccessModule,
   ],
 })
 export class AppModule {}
