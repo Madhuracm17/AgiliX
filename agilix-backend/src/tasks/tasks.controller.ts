@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
@@ -17,6 +18,7 @@ import { AuthUser } from '../auth/jwt-config';
 import { AccessService } from '../auth/access.service';
 import { requireRole } from '../auth/roles';
 import { UserRole } from '../users/schemas/user.schema';
+import { ApprovalsService } from '../approvals/approvals.service';
 
 const SPRINT_ADD_MESSAGE =
   'This task is assigned to someone else, so only they or a manager can add it to a sprint.';
@@ -28,6 +30,7 @@ export class TasksController {
   constructor(
     private readonly tasksService: TasksService,
     private readonly access: AccessService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   @Post()
@@ -44,7 +47,24 @@ export class TasksController {
     }
     if (dto.assignee) await this.access.assertAssignee(dto.project, dto.assignee);
 
+    // Developers and testers need a manager's approval to add a task. The task
+    // is created when the manager approves it (see ApprovalsService).
+    if (!canAssignOthers) return this.approvals.requestCreate(user, dto);
+
     return this.tasksService.create(dto);
+  }
+
+  /**
+   * Managers and admins delete a task straight away. A developer or tester sends
+   * a request instead, and the task is deleted when a manager approves it.
+   */
+  @Delete(':id')
+  async remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const { projectId } = await this.access.assertTask(user, id);
+    if (user.role === UserRole.ADMIN || user.role === UserRole.MANAGER) {
+      return this.tasksService.remove(id);
+    }
+    return this.approvals.requestDelete(user, id, projectId);
   }
 
   @Get()

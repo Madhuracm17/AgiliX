@@ -16,9 +16,16 @@ import {
 } from "../scrum/taskDisplay";
 import "./ProjectDashboard.css";
 
+/** The AI's explanation can be long; the dashboard shows just its first sentence. */
+function firstSentence(text: string): string {
+  const clean = (text ?? "").replace(/\s+/g, " ").trim();
+  const match = clean.match(/^.*?[.!?](?=\s|$)/);
+  return match ? match[0] : clean;
+}
+
 interface ProjectDashboardProps {
   /** Every project the signed-in person belongs to. */
-  projects: { _id: string; name: string }[];
+  projects: { _id: string; name: string; methodology?: "scrum" | "kanban" }[];
 }
 
 interface Activity {
@@ -118,6 +125,20 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
       })
       .slice(0, 6);
   }, [tasks, user._id, activeSprint]);
+
+  // Where clicking a task in "My Tasks" goes: the board of its sprint with that task
+  // highlighted, the backlog with the task open, or the Kanban board.
+  const openTask = (task: Task) => {
+    const projectId = typeof task.project === "string" ? task.project : String(task.project);
+    const project = projects.find((p) => sameId(p._id, projectId));
+    if ((project?.methodology ?? "scrum") === "kanban") {
+      navigate(`/projects/${projectId}/kanban`);
+    } else if (task.sprint) {
+      navigate(`/projects/${projectId}/sprints?task=${task._id}`);
+    } else {
+      navigate(`/projects/${projectId}/backlog?task=${task._id}`);
+    }
+  };
 
   // Where a task sits, shown under its title.
   const taskPlace = (task: Task) => {
@@ -251,8 +272,10 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                 </div>
 
                 {risk && (
-                  <p className="dash-muted">
-                    <strong>AI:</strong> {risk.reasoning}{" "}
+                  <p className="dash-muted dash-ai-line">
+                    <span className="dash-ai-text" title={risk.reasoning}>
+                      <strong>AI:</strong> {firstSentence(risk.reasoning)}
+                    </span>
                     <button
                       type="button"
                       className="dash-link"
@@ -294,7 +317,20 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                 ) : (
                   <ul className="dash-my-tasks">
                     {myTasks.map((task) => (
-                      <li key={task._id}>
+                      <li
+                        key={task._id}
+                        className="dash-task-link"
+                        role="link"
+                        tabIndex={0}
+                        title="Open this task"
+                        onClick={() => openTask(task)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openTask(task);
+                          }
+                        }}
+                      >
                         <div>
                           <strong className={task.status === "done" ? "dash-done" : ""}>
                             {task.title}

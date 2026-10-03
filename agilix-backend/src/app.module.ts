@@ -11,6 +11,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
 import { ReportsModule } from './reports/reports.module';
 import { AccessModule } from './auth/access.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ApprovalsModule } from './approvals/approvals.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { AccessModule } from './auth/access.module';
     AuthModule,
     ReportsModule,
     AccessModule,
+    NotificationsModule,
+    ApprovalsModule,
   ],
 })
 export class AppModule {}

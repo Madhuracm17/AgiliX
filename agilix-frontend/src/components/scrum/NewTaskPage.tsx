@@ -7,6 +7,7 @@ import {
   TASK_TYPES,
   addTaskToSprint,
   createTask,
+  isPendingApproval,
   type TaskPriority,
   type TaskType,
 } from "../../api/tasks";
@@ -54,6 +55,8 @@ export default function NewTaskPage() {
   const [storyPoints, setStoryPoints] = useState<StoryPointValue | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  // Set once a developer's or tester's request has been sent to a manager.
+  const [sentMessage, setSentMessage] = useState("");
 
   useEffect(() => {
     if (!projectId) return;
@@ -66,7 +69,9 @@ export default function NewTaskPage() {
   }, [projectId]);
 
   // Without an active sprint the task can only go to the backlog.
-  const goesToSprint = sprintChoice === "current" && activeSprint !== null;
+  // Developers and testers send a request; the approved task is created in the backlog.
+  const goesToSprint =
+    canAssignOthers && sprintChoice === "current" && activeSprint !== null;
 
   const leave = () =>
     navigate(`/projects/${projectId}/${goesToSprint ? "sprints" : "backlog"}`);
@@ -81,7 +86,7 @@ export default function NewTaskPage() {
     try {
       setCreating(true);
       setError("");
-      const task = await createTask({
+      const created = await createTask({
         title: title.trim(),
         description: description.trim() || undefined,
         project: projectId,
@@ -91,8 +96,14 @@ export default function NewTaskPage() {
         type: type || undefined,
       });
 
+      // A developer or tester asked for approval: nothing is created until a manager says yes.
+      if (isPendingApproval(created)) {
+        setSentMessage(created.message);
+        return;
+      }
+
       if (goesToSprint && activeSprint) {
-        await addTaskToSprint(task._id, activeSprint._id);
+        await addTaskToSprint(created._id, activeSprint._id);
       }
 
       leave();
@@ -215,27 +226,34 @@ export default function NewTaskPage() {
 
           <div className="new-task-fields">
             <span className="new-task-label">Sprint</span>
-            <div className="new-task-pills" role="group" aria-label="Sprint">
-              <button
-                type="button"
-                className={`new-task-pill ${goesToSprint ? "selected" : ""}`}
-                aria-pressed={goesToSprint}
-                disabled={!activeSprint}
-                title={activeSprint ? sprintLabel(activeSprint, allSprints) : "No active sprint"}
-                onClick={() => setSprintChoice("current")}
-              >
-                Current{activeSprint ? ` · ${sprintLabel(activeSprint, allSprints)}` : ""}
-              </button>
-              <button
-                type="button"
-                className={`new-task-pill ${!goesToSprint ? "selected" : ""}`}
-                aria-pressed={!goesToSprint}
-                onClick={() => setSprintChoice("backlog")}
-              >
-                Backlog
-              </button>
-            </div>
-            {!activeSprint && (
+            {!canAssignOthers && (
+              <p className="new-task-hint">
+                A manager has to approve a new task first. Once approved, it is created in the backlog.
+              </p>
+            )}
+            {canAssignOthers && (
+              <div className="new-task-pills" role="group" aria-label="Sprint">
+                <button
+                  type="button"
+                  className={`new-task-pill ${goesToSprint ? "selected" : ""}`}
+                  aria-pressed={goesToSprint}
+                  disabled={!activeSprint}
+                  title={activeSprint ? sprintLabel(activeSprint, allSprints) : "No active sprint"}
+                  onClick={() => setSprintChoice("current")}
+                >
+                  Current{activeSprint ? ` · ${sprintLabel(activeSprint, allSprints)}` : ""}
+                </button>
+                <button
+                  type="button"
+                  className={`new-task-pill ${!goesToSprint ? "selected" : ""}`}
+                  aria-pressed={!goesToSprint}
+                  onClick={() => setSprintChoice("backlog")}
+                >
+                  Backlog
+                </button>
+              </div>
+            )}
+            {canAssignOthers && !activeSprint && (
               <p className="new-task-hint">No active sprint, so the task goes to the backlog.</p>
             )}
 
@@ -271,14 +289,31 @@ export default function NewTaskPage() {
           </p>
         )}
 
-        <div className="form-actions">
-          <button className="secondary-button" onClick={leave}>
-            Cancel
-          </button>
-          <button className="primary-button" onClick={submit} disabled={creating}>
-            {creating ? "Creating..." : "Create New Task →"}
-          </button>
-        </div>
+        {sentMessage ? (
+          <>
+            <p className="new-task-success" role="status">
+              {sentMessage}
+            </p>
+            <div className="form-actions">
+              <button className="primary-button" onClick={leave}>
+                Back
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="form-actions">
+            <button className="secondary-button" onClick={leave}>
+              Cancel
+            </button>
+            <button className="primary-button" onClick={submit} disabled={creating}>
+              {creating
+                ? "Sending..."
+                : canAssignOthers
+                  ? "Create New Task →"
+                  : "Send for approval →"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

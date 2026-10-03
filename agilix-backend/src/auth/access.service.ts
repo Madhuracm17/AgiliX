@@ -68,18 +68,18 @@ export class AccessService {
     return projectId;
   }
 
-  /** Same check, starting from a task. Returns the task's project, assignee and status. */
+  /** Same check, starting from a task. Returns the task's project, assignee, status and whether it is in a sprint. */
   async assertTask(
     user: AuthUser,
     taskId: string,
-  ): Promise<{ projectId: string; assignee: string | null; status: string }> {
+  ): Promise<{ projectId: string; assignee: string | null; status: string; inSprint: boolean }> {
     if (!isValidObjectId(taskId)) throw new BadRequestException('Invalid task id');
     const task = (await this.connection
       .model('Task')
       .findById(taskId)
-      .select('project assignee status')
+      .select('project assignee status sprint')
       .lean()
-      .exec()) as { project?: unknown; assignee?: unknown; status?: string } | null;
+      .exec()) as { project?: unknown; assignee?: unknown; status?: string; sprint?: unknown } | null;
     if (!task) throw new NotFoundException('Task not found');
     const projectId = String(task.project);
     await this.assertProject(user, projectId);
@@ -87,6 +87,7 @@ export class AccessService {
       projectId,
       assignee: task.assignee ? String(task.assignee) : null,
       status: String(task.status ?? ''),
+      inSprint: task.sprint != null,
     };
   }
 

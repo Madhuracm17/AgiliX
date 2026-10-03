@@ -1,5 +1,6 @@
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { UserRole } from '../schemas/user.schema';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MESSAGE, PASSWORD_PATTERN } from '../../auth/password-policy';
 
 export class CreateUserDto {
   @IsString()
@@ -9,7 +10,8 @@ export class CreateUserDto {
   email: string;
 
   @IsString()
-  @MinLength(6)
+  @Matches(PASSWORD_PATTERN, { message: PASSWORD_MESSAGE })
+  @MaxLength(PASSWORD_MAX_LENGTH)
   password: string;
 
   // Anyone can sign up as a developer or tester. Signing up as a manager or

@@ -11,6 +11,8 @@ import { Sprint, SprintDocument, SprintStatus } from '../sprints/schemas/sprint.
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserRole } from '../users/schemas/user.schema';
+import { NotificationsService } from '../notifications/notifications.service';
+import { deleteTaskAndTime } from './task-cleanup';
 
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 
@@ -37,6 +39,7 @@ export class TasksService {
   constructor(
     @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
     @InjectModel(Sprint.name) private sprintModel: Model<SprintDocument>,
+    private readonly notifications: NotificationsService,
   ) {}
   create(dto: CreateTaskDto) {
     return new this.taskModel(dto).save();
@@ -63,15 +66,31 @@ export class TasksService {
    * skip the sign-off and "only the assignee" checks.
    */
   async update(id: string, dto: UpdateTaskDto, role?: UserRole, userId?: string) {
+    const { reviewComment, ...fields } = dto;
+
+    let sentBack: { assignee: string | null; title: string; project: string } | null = null;
     if (dto.status !== undefined) {
-      await this.checkStatusFlow(id, dto.status, role, userId);
+      sentBack = await this.checkStatusFlow(id, dto.status, reviewComment, role, userId);
     }
 
     // Keep the dates the Scrum reports need: when it became Done, and when it
     // joined its sprint.
-    const changes: Record<string, unknown> = { ...dto };
+    const changes: Record<string, unknown> = { ...fields };
     if (dto.status !== undefined) {
       changes.completedAt = dto.status === TaskStatus.DONE ? new Date() : null;
+      // The tester's note stays while the developer fixes the task, and is
+      // cleared once the work is back in Review or Done.
+      if (dto.status === TaskStatus.REVIEW || dto.status === TaskStatus.DONE) {
+        changes.reviewNote = null;
+      }
+    }
+    if (sentBack) {
+      changes.reviewNote = {
+        text: (reviewComment ?? '').trim(),
+        by: userId ?? '',
+        byName: await this.nameOf(userId),
+        at: new Date(),
+      };
     }
     if (dto.sprint !== undefined) {
       changes.addedToSprintAt = dto.sprint ? new Date() : null;
@@ -83,7 +102,37 @@ export class TasksService {
     // A finished task needs no timer: stop any that are still running so the
     // hours stop counting the moment the task becomes Done.
     if (dto.status === TaskStatus.DONE) await this.stopRunningTimers(id);
+
+    // Tell the person who put the task into Review what has to be fixed.
+    if (sentBack?.assignee) {
+      const name = await this.nameOf(userId);
+      await this.notifications.notify([sentBack.assignee], {
+        kind: 'review_returned',
+        text: `${name} sent “${sentBack.title}” back to In Progress`,
+        detail: `${(reviewComment ?? '').trim()}`,
+        link: `/projects/${sentBack.project}/sprints?task=${id}`,
+      });
+    }
     return task;
+  }
+
+  private async nameOf(userId?: string): Promise<string> {
+    if (!userId) return 'A tester';
+    const person = (await this.taskModel.db
+      .model('User')
+      .findById(userId)
+      .select('name')
+      .lean()
+      .exec()) as { name?: string } | null;
+    return person?.name ?? 'A tester';
+  }
+
+  /** Deletes a task and the time logged on it. Managers and admins only (the controller checks). */
+  async remove(id: string) {
+    if (!OBJECT_ID_PATTERN.test(id)) throw new BadRequestException('Invalid task id');
+    const deleted = await deleteTaskAndTime(this.taskModel.db, id);
+    if (!deleted) throw new NotFoundException('Task not found');
+    return { deleted: true };
   }
 
   private async stopRunningTimers(taskId: string) {
@@ -100,18 +149,45 @@ export class TasksService {
   }
 
   /**
-   * Tasks inside a sprint (Scrum) may only move To Do → In Progress →
-   * Review → Done, one step at a time. Tasks without a sprint (backlog and
+   * Tasks inside a sprint (Scrum) move To Do → In Progress → Review → Done, one
+   * step at a time. The only step back is Review → In Progress, by a tester,
+   * manager or admin, with a comment. Tasks without a sprint (backlog and
    * Kanban tasks) are not affected, so the Kanban board works as before.
    */
-  private async checkStatusFlow(id: string, status: TaskStatus, role?: UserRole, userId?: string) {
+  private async checkStatusFlow(
+    id: string,
+    status: TaskStatus,
+    reviewComment: string | undefined,
+    role?: UserRole,
+    userId?: string,
+  ): Promise<{ assignee: string | null; title: string; project: string } | null> {
     if (!OBJECT_ID_PATTERN.test(id)) {
       throw new BadRequestException('Invalid task id');
     }
 
-    const current = await this.taskModel.findById(id).select('status sprint assignee');
+    const current = await this.taskModel.findById(id).select('status sprint assignee title project');
     if (!current) throw new NotFoundException('Task not found');
-    if (!current.sprint || current.status === status) return;
+    if (!current.sprint || current.status === status) return null;
+
+    // The one step backwards: a tester (or manager or admin) finds a problem in
+    // Review and sends the task back to In Progress, with a comment for the assignee.
+    if (current.status === TaskStatus.REVIEW && status === TaskStatus.IN_PROGRESS) {
+      if (role && !CAN_MARK_DONE.includes(role)) {
+        throw new ForbiddenException(
+          'Only a tester, manager or admin can send a task back from Review.',
+        );
+      }
+      if (!reviewComment || !reviewComment.trim()) {
+        throw new BadRequestException(
+          'Please add a comment that tells the developer what needs to be fixed.',
+        );
+      }
+      return {
+        assignee: current.assignee ? String(current.assignee) : null,
+        title: current.title,
+        project: String(current.project),
+      };
+    }
 
     const from = SPRINT_STATUS_FLOW.indexOf(current.status);
     const next = SPRINT_STATUS_FLOW[from + 1];
@@ -128,7 +204,7 @@ export class TasksService {
       if (role && !CAN_MARK_DONE.includes(role)) {
         throw new ForbiddenException('A task can only be marked Done by a tester, manager or admin. Please ask a tester to review it.');
       }
-      return;
+      return null;
     }
 
     // To Do → In Progress → Review is the assignee's own work: nobody else moves it,
@@ -141,6 +217,7 @@ export class TasksService {
         throw new ForbiddenException('Only the person this task is assigned to can move it to In Progress or Review.');
       }
     }
+    return null;
   }
 
   // Pull a backlog task into a sprint (Manager selects tasks for sprint).

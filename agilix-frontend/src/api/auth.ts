@@ -38,3 +38,19 @@ export function register(data: RegisterData) {
     body: JSON.stringify(data),
   });
 }
+
+/** Step 1 of "Forgot password": checks that an account exists (404 if not). */
+export function forgotPassword(email: string) {
+  return api<{ found: boolean; message: string }>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Step 2: sets a new password for that account. */
+export function resetPassword(email: string, password: string) {
+  return api<{ message: string }>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}

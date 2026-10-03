@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { login, register } from "../api/auth";
+import { forgotPassword, login, register, resetPassword } from "../api/auth";
 import type { User } from "../api/users";
+import { PASSWORD_HINT, passwordProblem } from "./passwordPolicy";
 
-type Mode = "login" | "register";
+type Mode = "login" | "register" | "forgot" | "reset";
 type SignUpRole = "developer" | "tester" | "manager" | "admin";
 
 interface LoginPageProps {
@@ -10,32 +11,87 @@ interface LoginPageProps {
   onLoggedIn: (token: string, user: User) => void;
 }
 
-/** Must match the backend's CreateUserDto (@MinLength(6)). */
-const MIN_PASSWORD_LENGTH = 6;
-
 export default function LoginPage({ onLoggedIn }: LoginPageProps) {
   const [mode, setMode] = useState<Mode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<SignUpRole>("developer");
   const [accessCode, setAccessCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  // A friendly confirmation shown above the form (for example after a reset).
+  const [notice, setNotice] = useState("");
 
   const isRegister = mode === "register";
+  const isForgot = mode === "forgot";
+  const isReset = mode === "reset";
   const needsCode = role === "manager" || role === "admin";
 
   const switchMode = (next: Mode) => {
     setMode(next);
     setError("");
+    setNotice("");
     setPassword("");
+    setConfirmPassword("");
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting) return;
 
+    // ---- Forgot password: ask for the email, send the link ----
+    if (isForgot) {
+      if (!email.trim()) {
+        setError("Please enter your email.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      try {
+        // The account exists: go on to choosing the new password.
+        await forgotPassword(email.trim());
+        setPassword("");
+        setConfirmPassword("");
+        setMode("reset");
+        setNotice("Account found. Create a new password.");
+      } catch (err) {
+        setError(readError(err, "Could not look up this email. Please try again."));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // ---- Reset password: choose a new password from the emailed link ----
+    if (isReset) {
+      const problem = passwordProblem(password);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("The two passwords do not match.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      try {
+        const result = await resetPassword(email.trim(), password);
+        setMode("login");
+        setPassword("");
+        setConfirmPassword("");
+        setNotice(result.message);
+      } catch (err) {
+        setError(readError(err, "Could not reset the password. Please try again."));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // ---- Log in / create account ----
     const trimmedEmail = email.trim();
     const trimmedName = name.trim();
 
@@ -43,9 +99,12 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
       setError("Please fill in all fields.");
       return;
     }
-    if (isRegister && password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
-      return;
+    if (isRegister) {
+      const problem = passwordProblem(password);
+      if (problem) {
+        setError(problem);
+        return;
+      }
     }
 
     if (isRegister && needsCode && !accessCode.trim()) {
@@ -55,6 +114,7 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
 
     setSubmitting(true);
     setError("");
+    setNotice("");
 
     try {
       if (isRegister) {
@@ -76,6 +136,38 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
     }
   };
 
+  const title = isRegister
+    ? "Create your account"
+    : isForgot
+      ? "Forgot your password?"
+      : isReset
+        ? "Choose a new password"
+        : "Log in";
+
+  const subtitle = isRegister
+    ? "Join your team's AgiliX workspace."
+    : isForgot
+      ? "Enter your email and we will check that your account exists."
+      : isReset
+        ? `Choose a new password for ${email.trim()}.`
+        : "Welcome back.\nLog in to your workspace.";
+
+  const buttonText = submitting
+    ? isRegister
+      ? "Creating account…"
+      : isForgot
+        ? "Checking…"
+        : isReset
+          ? "Saving…"
+          : "Logging in…"
+    : isRegister
+      ? "Create account"
+      : isForgot
+        ? "Continue"
+        : isReset
+          ? "Save new password"
+          : "Log in";
+
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={handleSubmit} noValidate>
@@ -84,12 +176,14 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
           <span>AgiliX</span>
         </div>
 
-        <h1>{isRegister ? "Create your account" : "Log in"}</h1>
-        <p className="auth-subtitle">
-          {isRegister
-            ? "Join your team's AgiliX workspace."
-            : "Welcome back. Log in to your workspace."}
-        </p>
+        <h1>{title}</h1>
+        <p className="auth-subtitle">{subtitle}</p>
+
+        {notice && (
+          <p className="auth-success" role="status">
+            {notice}
+          </p>
+        )}
 
         {isRegister && (
           <>
@@ -105,15 +199,19 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
           </>
         )}
 
-        <label htmlFor="auth-email">Email</label>
-        <input
-          id="auth-email"
-          type="email"
-          autoComplete="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        {!isReset && (
+          <>
+            <label htmlFor="auth-email">Email</label>
+            <input
+              id="auth-email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </>
+        )}
 
         {isRegister && (
           <>
@@ -144,15 +242,47 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
           </>
         )}
 
-        <label htmlFor="auth-password">Password</label>
-        <input
-          id="auth-password"
-          type="password"
-          autoComplete={isRegister ? "new-password" : "current-password"}
-          placeholder={isRegister ? `At least ${MIN_PASSWORD_LENGTH} characters` : "Your password"}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        {!isForgot && (
+          <>
+            <label htmlFor="auth-password">{isReset ? "New password" : "Password"}</label>
+            <input
+              id="auth-password"
+              type="password"
+              autoComplete={isRegister || isReset ? "new-password" : "current-password"}
+              placeholder={isRegister || isReset ? PASSWORD_HINT : "Your password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            {(isRegister || isReset) && <p className="auth-hint">{PASSWORD_HINT}</p>}
+          </>
+        )}
+
+        {isReset && (
+          <>
+            <label htmlFor="auth-confirm">Confirm new password</label>
+            <input
+              id="auth-confirm"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Type it again"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+          </>
+        )}
+
+        {mode === "login" && (
+          <p className="auth-forgot">
+            <button
+              type="button"
+              className="auth-link"
+              onClick={() => switchMode("forgot")}
+              disabled={submitting}
+            >
+              Forgot password?
+            </button>
+          </p>
+        )}
 
         {error && (
           <p className="auth-error" role="alert">
@@ -161,26 +291,51 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
         )}
 
         <button type="submit" className="primary-button auth-submit" disabled={submitting}>
-          {submitting
-            ? isRegister
-              ? "Creating account…"
-              : "Logging in…"
-            : isRegister
-              ? "Create account"
-              : "Log in"}
+          {buttonText}
         </button>
 
-        <p className="auth-switch">
-          {isRegister ? "Already have an account?" : "New to AgiliX?"}{" "}
-          <button
-            type="button"
-            className="auth-link"
-            onClick={() => switchMode(isRegister ? "login" : "register")}
-            disabled={submitting}
-          >
-            {isRegister ? "Log in" : "Create an account"}
-          </button>
-        </p>
+        {(isForgot || isReset) && (
+          <p className="auth-switch">
+            <button
+              type="button"
+              className="auth-link"
+              onClick={() => {
+                switchMode("login");
+              }}
+              disabled={submitting}
+            >
+              Back to log in
+            </button>
+          </p>
+        )}
+
+        {isForgot && (
+          <p className="auth-switch">
+            New to AgiliX?{" "}
+            <button
+              type="button"
+              className="auth-link"
+              onClick={() => switchMode("register")}
+              disabled={submitting}
+            >
+              Create an account
+            </button>
+          </p>
+        )}
+
+        {(mode === "login" || isRegister) && (
+          <p className="auth-switch">
+            {isRegister ? "Already have an account?" : "New to AgiliX?"}{" "}
+            <button
+              type="button"
+              className="auth-link"
+              onClick={() => switchMode(isRegister ? "login" : "register")}
+              disabled={submitting}
+            >
+              {isRegister ? "Log in" : "Create an account"}
+            </button>
+          </p>
+        )}
       </form>
     </div>
   );

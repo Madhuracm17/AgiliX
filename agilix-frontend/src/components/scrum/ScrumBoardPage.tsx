@@ -1,11 +1,15 @@
-import { useEffect, useState, type DragEvent, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { usePendingDeletes } from "../approvals/usePendingDeletes";
 import { useProjectPeople } from "../team/useProjectPeople";
 import { createSprint, getSprints, type Sprint } from "../../api/sprints";
 import {
+  deleteTask,
   getSprintStats,
   getSprintTasks,
+  getTasks,
+  isPendingApproval,
   updateTask,
   type SprintStats,
   type Task,
@@ -53,6 +57,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   const signOff = canMarkDone(user.role);
   // Admins and managers can reassign a task to another team member.
   const canReassign = canEditTaskPlan(user.role);
+  const { pendingDeleteIds, markRequested } = usePendingDeletes(projectId, !canReassign);
   const people = useProjectPeople(canReassign ? projectId : undefined);
 
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -69,6 +74,18 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   const [goal, setGoal] = useState("");
   // Sprint length in weeks; the dates are worked out from it.
   const [weeks, setWeeks] = useState(2);
+
+  // "Send back to In Progress" (a tester's step back from Review), with its comment.
+  const [bouncingId, setBouncingId] = useState<string | null>(null);
+  const [bounceText, setBounceText] = useState("");
+  const [bounceBusy, setBounceBusy] = useState(false);
+
+  // A link such as /sprints?task=<id> (from My Tasks or a notification) opens that
+  // task's sprint and highlights its card.
+  const [searchParams] = useSearchParams();
+  const focusTaskId = searchParams.get("task");
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const focusedSprintFor = useRef<string | null>(null);
 
   const [movingToBacklogId, setMovingToBacklogId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<TaskStatus | null>(null);
@@ -117,9 +134,49 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
     if (selectedSprintId) loadSprintDetails(selectedSprintId);
   }, [selectedSprintId]);
 
+  // Open the sprint that holds the task from the link (once per link).
+  useEffect(() => {
+    if (!focusTaskId || !projectId || sprints.length === 0) return;
+    if (focusedSprintFor.current === focusTaskId) return;
+    focusedSprintFor.current = focusTaskId;
+    getTasks(projectId)
+      .then((all) => {
+        const target = all.find((t) => t._id === focusTaskId);
+        const sprint = target && sprints.find((sp) => sameId(target.sprint, sp._id));
+        if (sprint) setSelectedSprintId(sprint._id);
+      })
+      .catch(() => {
+        // The board still opens; it just is not moved to that sprint.
+      });
+  }, [focusTaskId, projectId, sprints]);
+
+  // Once the cards are on screen, scroll to the task and highlight it for a moment.
+  useEffect(() => {
+    if (!focusTaskId || !sprintTasks.some((t) => t._id === focusTaskId)) return;
+    setHighlightId(focusTaskId);
+    document
+      .getElementById(`task-card-${focusTaskId}`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const timer = window.setTimeout(() => setHighlightId(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [focusTaskId, sprintTasks]);
+
   const selectedSprint = sprints.find((s) => s._id === selectedSprintId) ?? null;
   // Completed sprints are a record: their board can no longer be changed.
   const sprintIsLocked = selectedSprint?.status === "completed";
+
+  // Finished tasks stay on the board only until the sprint's last date. After that
+  // they are hidden (they are still counted in the progress bar and the reports).
+  const pastLastDate = (() => {
+    if (!selectedSprint) return false;
+    const end = new Date(selectedSprint.endDate);
+    end.setHours(23, 59, 59, 999);
+    return Date.now() > end.getTime();
+  })();
+  const visibleTasks = pastLastDate
+    ? sprintTasks.filter((t) => t.status !== "done")
+    : sprintTasks;
+  const hiddenDoneCount = sprintTasks.length - visibleTasks.length;
 
   // To Do → In Progress → Review is the assignee's own work, so only they can do it
   // (not even a manager). Review → Done is the sign-off by a tester, manager or admin.
@@ -145,6 +202,47 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
       alert(readError(err, "Failed to move task"));
     }
     if (selectedSprintId) await loadSprintDetails(selectedSprintId);
+  };
+
+  // A tester (or manager or admin) found a problem in Review: the task goes back to
+  // In Progress and the person it is assigned to is told what to fix.
+  const sendBack = async (task: Task) => {
+    const comment = bounceText.trim();
+    if (!comment) {
+      alert("Please write what needs to be fixed, so the developer knows.");
+      return;
+    }
+    try {
+      setBounceBusy(true);
+      await updateTask(task._id, { status: "in_progress", reviewComment: comment });
+      setBouncingId(null);
+      setBounceText("");
+      if (selectedSprintId) await loadSprintDetails(selectedSprintId);
+    } catch (err) {
+      alert(readError(err, "Could not send the task back"));
+    } finally {
+      setBounceBusy(false);
+    }
+  };
+
+  // Managers and admins delete a task at once; developers and testers send a
+  // request that a manager has to approve.
+  const removeTask = async (task: Task) => {
+    const question = canReassign
+      ? `Delete “${task.title}”? This cannot be undone.`
+      : `Ask a manager to delete “${task.title}”?`;
+    if (!window.confirm(question)) return;
+    try {
+      const result = await deleteTask(task._id);
+      if (isPendingApproval(result)) {
+        markRequested(task._id);
+        alert(result.message);
+        return;
+      }
+      if (selectedSprintId) await loadSprintDetails(selectedSprintId);
+    } catch (err) {
+      alert(readError(err, "Failed to delete the task"));
+    }
   };
 
   const reassign = async (task: Task, personId: string) => {
@@ -261,6 +359,12 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
               Reports
             </button>
           )}
+          <button
+            className="secondary-button"
+            onClick={() => navigate(`/projects/${projectId}/approvals`)}
+          >
+            Approvals
+          </button>
           <button
             className="primary-button"
             onClick={() =>
@@ -389,6 +493,13 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
             />
           )}
 
+          {hiddenDoneCount > 0 && (
+            <p className="scrum-hidden-note">
+              {hiddenDoneCount} completed {hiddenDoneCount === 1 ? "task is" : "tasks are"} no longer
+              shown because this sprint's last date has passed. They still count in the reports.
+            </p>
+          )}
+
           {sprintTasks.length === 0 && (
             <p className="page-description scrum-hint">
               No tasks in this sprint yet. Create tasks and add them to this
@@ -398,7 +509,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
 
           <div className="scrum-board">
             {SCRUM_COLUMNS.map((column) => {
-              const columnTasks = sprintTasks.filter((t) => t.status === column.key);
+              const columnTasks = visibleTasks.filter((t) => t.status === column.key);
 
               return (
                 <div
@@ -428,7 +539,8 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                     {columnTasks.map((task) => (
                       <div
                         key={task._id}
-                        className="scrum-card"
+                        id={`task-card-${task._id}`}
+                        className={`scrum-card ${highlightId === task._id ? "scrum-card-highlight" : ""}`}
                         draggable={
                           !sprintIsLocked &&
                           task.status !== "done" &&
@@ -451,6 +563,14 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                         </h3>
                         {task.description && (
                           <p className="scrum-summary">{task.description}</p>
+                        )}
+
+                        {/* What the tester asked to fix, while the task is back in progress. */}
+                        {task.reviewNote && task.status === "in_progress" && (
+                          <p className="scrum-review-note">
+                            <strong>Sent back by {task.reviewNote.byName || "a tester"}</strong>
+                            {task.reviewNote.text}
+                          </p>
                         )}
 
                         <div className="scrum-card-footer">
@@ -510,6 +630,53 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                               <p className="scrum-card-final">✓ Done</p>
                             )}
 
+                            {/* A tester can send work back from Review, with a comment. */}
+                            {task.status === "review" && signOff && (
+                              bouncingId === task._id ? (
+                                <div className="scrum-bounce">
+                                  <textarea
+                                    aria-label={`What needs to be fixed in ${task.title}`}
+                                    placeholder="What needs to be fixed?"
+                                    value={bounceText}
+                                    maxLength={1000}
+                                    onChange={(e) => setBounceText(e.target.value)}
+                                  />
+                                  <div className="scrum-bounce-actions">
+                                    <button
+                                      type="button"
+                                      className="scrum-bounce-button"
+                                      disabled={bounceBusy}
+                                      onClick={() => sendBack(task)}
+                                    >
+                                      {bounceBusy ? "Sending…" : "Send back"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="sprint-card-backlog-button"
+                                      disabled={bounceBusy}
+                                      onClick={() => {
+                                        setBouncingId(null);
+                                        setBounceText("");
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="scrum-bounce-button"
+                                  onClick={() => {
+                                    setBouncingId(task._id);
+                                    setBounceText("");
+                                  }}
+                                >
+                                  ↩ Found a bug? Send back
+                                </button>
+                              )
+                            )}
+
                             {/* Only work that hasn't reached Review can go back to the backlog. */}
                             {(task.status === "todo" || task.status === "in_progress") &&
                               (!task.assignee || isAssignee(task)) && (
@@ -522,6 +689,23 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                                 {movingToBacklogId === task._id
                                   ? "Moving…"
                                   : "↩ Back to backlog"}
+                              </button>
+                            )}
+
+                            {/* Managers and admins can delete any unfinished task.
+                                Developers and testers can only ask for a task that is still in To Do. */}
+                            {(canReassign ? task.status !== "done" : task.status === "todo") && (
+                              <button
+                                type="button"
+                                className="task-delete-button"
+                                onClick={() => removeTask(task)}
+                                disabled={!canReassign && pendingDeleteIds.has(task._id)}
+                              >
+                                {canReassign
+                                  ? "Delete task"
+                                  : pendingDeleteIds.has(task._id)
+                                    ? "Deletion requested"
+                                    : "Request deletion"}
                               </button>
                             )}
                           </div>

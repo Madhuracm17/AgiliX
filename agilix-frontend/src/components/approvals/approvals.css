@@ -1,0 +1,70 @@
+/* ---- Approvals page ---- */
+
+.approval-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.approval-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 4px;
+  border-top: 1px solid #ece6d6;
+}
+
+.approval-row:first-child {
+  border-top: none;
+}
+
+.approval-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.approval-text strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.approval-text span {
+  font-size: 12px;
+  color: #6b6f62;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.approval-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f1ecdc;
+  color: #6b6f62;
+}
+
+.approval-approved {
+  background: #e6f2dc;
+  color: #3f5a2a;
+}
+
+.approval-rejected {
+  background: #fdeaea;
+  color: #b03030;
+}
+
+@media (max-width: 600px) {
+  .approval-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

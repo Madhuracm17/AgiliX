@@ -17,6 +17,9 @@ import ProjectTeamPage from "./components/team/ProjectTeamPage";
 import ReportsPage from "./components/reports/ReportsPage";
 import ProjectCard from "./components/projects/ProjectCard";
 import ProjectSettings from "./components/projects/ProjectSettings";
+import ApprovalsPage from "./components/approvals/ApprovalsPage";
+import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
+import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
 import { PROJECT_STATUS_LABELS, type ProjectStatus } from "./api/projects";
 import "./components/team/team.css";
 
@@ -82,12 +85,15 @@ function formatDuration(totalSeconds: number) {
 }
 
 // How long the user can be idle before we auto-pause a running timer.
-const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
+const INACTIVITY_LIMIT_MS = 60 * 1000; // 1 minute
 
 // Browser events that count as "the user is active". We only ever check
 // THAT one of these fired, never read anything about the event itself
 // (no keys pressed, no cursor position, nothing is stored or sent anywhere).
 const ACTIVITY_EVENTS = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+
+// Sent on window when starting one timer paused the person's other running timer(s).
+const TIMERS_PAUSED_EVENT = "agilix:timers-paused";
 
 function TaskTimer({ task }: { task: Task }) {
   const { user: currentUser } = useAuth();
@@ -150,6 +156,22 @@ function TaskTimer({ task }: { task: Task }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task._id]);
 
+  // Starting a timer on another task pauses this one (only one runs at a time).
+  // The page that started it announces which tasks were paused.
+  useEffect(() => {
+    const onPaused = (event: Event) => {
+      const ids = (event as CustomEvent<string[]>).detail ?? [];
+      if (ids.includes(task._id)) {
+        setActiveEntryId(null);
+        setPausedByInactivity(false);
+        load();
+      }
+    };
+    window.addEventListener(TIMERS_PAUSED_EVENT, onPaused);
+    return () => window.removeEventListener(TIMERS_PAUSED_EVENT, onPaused);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task._id]);
+
   // Ticks the visible "elapsed" clock once a second while a timer is running.
   useEffect(() => {
     if (!activeEntryId) return;
@@ -178,18 +200,29 @@ function TaskTimer({ task }: { task: Task }) {
       const idleFor = Date.now() - lastActivityRef.current;
 
       if (idleFor >= INACTIVITY_LIMIT_MS) {
+        // The timer is stopped at the moment of the last activity, so the idle
+        // minute is not counted as working time.
         const response = await fetch(
           `${API_URL}/time-entries/${activeEntryId}/stop`,
-          { method: "PATCH" }
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              endedAt: new Date(lastActivityRef.current).toISOString(),
+            }),
+          }
         );
 
         if (response.ok) {
           setActiveEntryId(null);
           setPausedByInactivity(true);
           await load();
+        } else {
+          // Already stopped on the server (for example paused by another task).
+          await load();
         }
       }
-    }, 10000); // check every 10s — cheap, and 10s of slack on a 15-minute limit is fine
+    }, 5000); // check every 5s: cheap, and 5s of slack on a 1-minute limit is fine
 
     return () => {
       ACTIVITY_EVENTS.forEach((event) =>
@@ -213,6 +246,18 @@ function TaskTimer({ task }: { task: Task }) {
       setActiveEntryId(entry._id);
       setElapsed(0);
       setPausedByInactivity(false);
+
+      const pausedTasks: { taskId: string; title: string }[] = entry.pausedTasks ?? [];
+      if (pausedTasks.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent(TIMERS_PAUSED_EVENT, { detail: pausedTasks.map((t) => t.taskId) })
+        );
+        alert(
+          `Only one timer can run at a time, so the timer on “${pausedTasks
+            .map((t) => t.title)
+            .join("”, “")}” was paused.`
+        );
+      }
     } else {
       const err = await response.json();
       alert(err.message || "Failed to start timer");
@@ -228,11 +273,13 @@ function TaskTimer({ task }: { task: Task }) {
       { method: "PATCH" }
     );
 
+    // Even if the server says it was already stopped (for example it was paused
+    // by starting another task), refresh so the button shows the real state.
     if (response.ok) {
       setActiveEntryId(null);
       setPausedByInactivity(false);
-      await load();
     }
+    await load();
   };
 
   // Resume after an inactivity pause is just a normal start — it opens a
@@ -268,7 +315,7 @@ function TaskTimer({ task }: { task: Task }) {
         </span>
 
         <div className="timer-inactivity-warning">
-          <span>Timer paused due to inactivity</span>
+          <span>Timer paused after 1 minute of inactivity</span>
           <button className="timer-button" onClick={resume}>
             ▶ Resume Timer
           </button>
@@ -277,18 +324,23 @@ function TaskTimer({ task }: { task: Task }) {
     );
   }
 
+  // One clock that never goes back to zero: the time already saved plus the
+  // stretch that is running now. Pausing and resuming just continues from it.
+  const clock = totalSeconds + (activeEntryId ? elapsed : 0);
+
   return (
     <div className="task-timer">
-      <span className="timer-total">Total: {formatDuration(totalSeconds)}</span>
-
       {activeEntryId ? (
         <button className="timer-button timer-running" onClick={pause}>
-          ⏱ {formatDuration(elapsed)} ⏸ Pause
+          ⏱ {formatDuration(clock)} ⏸ Pause
         </button>
       ) : (
-        <button className="timer-button" onClick={start}>
-          ▶ Start Timer
-        </button>
+        <>
+          <span className="timer-total">Total: {formatDuration(totalSeconds)}</span>
+          <button className="timer-button" onClick={start}>
+            {totalSeconds > 0 ? "▶ Resume Timer" : "▶ Start Timer"}
+          </button>
+        </>
       )}
     </div>
   );
@@ -577,13 +629,9 @@ function ProjectsPage() {
             <ProjectCard
               key={project._id}
               project={project}
-              onOpen={() =>
-                navigate(
-                  (project.methodology || "scrum") === "kanban"
-                    ? `/projects/${project._id}/kanban`
-                    : `/projects/${project._id}/sprints`,
-                )
-              }
+              // The project's details page (active sprint, backlog, team...).
+              // The board is opened from there.
+              onOpen={() => navigate(`/projects/${project._id}`)}
             />
           ))}
         </div>
@@ -726,6 +774,8 @@ function ProjectOverviewPage() {
   const { user: currentUser } = useAuth();
 
   const [project, setProject] = useState<Project | null>(null);
+  // The project's sprints, to show the active one on this page.
+  const [projectSprints, setProjectSprints] = useState<ApiSprint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -748,6 +798,8 @@ function ProjectOverviewPage() {
       }
 
       setProject(await response.json());
+      // Optional: if the sprints cannot be loaded the page still works.
+      setProjectSprints(await getSprints(projectId).catch(() => []));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -899,16 +951,37 @@ function ProjectOverviewPage() {
               </div>
             </div>
 
-            <p>
-              Plan your sprint, assign tasks and track progress toward your
-              sprint goal.
-            </p>
+            {(() => {
+              const active = projectSprints.find((sp) => sp.status === "active");
+              return active ? (
+                <p>
+                  <strong>{sprintLabel(active, projectSprints)}</strong>
+                  <br />
+                  {formatLongDate(active.startDate.slice(0, 10))} –{" "}
+                  {formatLongDate(active.endDate.slice(0, 10))} ·{" "}
+                  {daysLeft(active.endDate)} {daysLeft(active.endDate) === 1 ? "day" : "days"} left
+                  {active.goal ? (
+                    <>
+                      <br />
+                      Goal: {active.goal}
+                    </>
+                  ) : null}
+                </p>
+              ) : (
+                <p>
+                  There is no active sprint right now. Plan one on the Scrum
+                  Board and start it when the team is ready.
+                </p>
+              );
+            })()}
 
             <button
               className="secondary-button"
               onClick={() => navigate(`/projects/${projectId}/sprints`)}
             >
-              View Sprint
+              {projectSprints.some((sp) => sp.status === "active")
+                ? "Open Active Sprint"
+                : "View Sprints"}
             </button>
           </div>
         )}
@@ -931,6 +1004,28 @@ function ProjectOverviewPage() {
             onClick={() => navigate(`/projects/${projectId}/team`)}
           >
             Manage Team
+          </button>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-header">
+            <div>
+              <span className="eyebrow">APPROVALS</span>
+              <h2>Requests</h2>
+            </div>
+          </div>
+
+          <p>
+            {currentUser.role === "manager" || currentUser.role === "admin"
+              ? "Approve or reject requests from developers and testers to create or delete tasks."
+              : "Creating or deleting a task needs a manager's approval. See your requests here."}
+          </p>
+
+          <button
+            className="secondary-button"
+            onClick={() => navigate(`/projects/${projectId}/approvals`)}
+          >
+            View Requests
           </button>
         </div>
 
@@ -1005,7 +1100,12 @@ function BacklogPage() {
 // Scrum Board — see components/scrum/ScrumBoardPage.tsx.
 // The time tracker stays here and is shown on each sprint card.
 function SprintPage() {
-  return <ScrumBoardPage renderTaskTools={(task) => <TaskTimer task={task} />} />;
+  // Work in To Do has not started, so it has no timer.
+  return (
+    <ScrumBoardPage
+      renderTaskTools={(task) => (task.status === "todo" ? null : <TaskTimer task={task} />)}
+    />
+  );
 }
 
 function AiInsightsPage() {
@@ -1239,10 +1339,12 @@ function KanbanBoardPage() {
         }),
       });
 
+      const created = await response.json().catch(() => null);
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || "Failed to create task");
+        throw new Error(created?.message || "Failed to create task");
       }
+      // Developers and testers need a manager's approval before a task is created.
+      if (created?.pendingApproval) alert(created.message);
 
       setTitle("");
       setDescription("");
@@ -1562,7 +1664,14 @@ function App() {
             path="/projects/:projectId/team"
             element={<ProjectTeamPage />}
           />
+
+          <Route
+            path="/projects/:projectId/approvals"
+            element={<ApprovalsPage />}
+          />
           <Route path="/team" element={<TeamPage />} />
+
+          {/* A password reset link opened while already logged in. */}
         </Route>
       </Routes>
     </BrowserRouter>
