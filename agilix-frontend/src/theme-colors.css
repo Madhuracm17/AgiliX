@@ -1,0 +1,374 @@
+/*
+ * Colour pass: Sage / Mustard / Clay / Cream / Charcoal used as real fills,
+ * not only as thin accents. Loaded after every other stylesheet (see main.tsx),
+ * so these rules take priority. Styling only, no layout or logic changes.
+ *
+ *   Sage     #829172  primary: buttons, column headers, active states
+ *   Mustard  #c4a04d  highlight: the key tile, cards' accent edge, medium priority
+ *   Clay     #b98262  occasional accent: high priority, one tile
+ *   Cream    #f6f2e8  page background
+ *   Charcoal #30342e  text
+ */
+
+:root {
+  --sage-tint: #e3e9dc;
+  --sage-border: #b9c6ac;
+  --mustard-tint: #f6ecd0;
+  --mustard-dark: #8a6a1f;
+  --clay-tint: #f3e2d6;
+  --clay-dark: #8e5a3c;
+}
+
+/* ---- Text: a little darker so it stays easy to read on cream ---- */
+.page-description,
+.project-info-card p,
+.dashboard-card > p,
+.pcard-summary,
+.scrum-summary,
+.dash-stat > span,
+.dash-muted {
+  color: #565b4e;
+}
+
+/* ---- Stat tiles: four separate tinted tiles, like the reference ---- */
+.project-info-card {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  gap: 16px;
+}
+
+.project-info-card > div {
+  border: 1px solid var(--sage-border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  background: var(--sage-tint);
+}
+
+.project-info-card > div:nth-child(3) {
+  background: var(--mustard-tint);
+  border-color: var(--mustard);
+}
+
+.project-info-card > div:nth-child(4) {
+  background: var(--clay-tint);
+  border-color: var(--clay);
+}
+
+.project-info-card h3 {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--charcoal);
+}
+
+/* Dashboard summary pills */
+.dash-stat {
+  background: var(--sage-tint);
+  border-color: var(--sage-border);
+}
+
+.dash-stat:nth-child(2) {
+  background: var(--mustard-tint);
+  border-color: var(--mustard);
+}
+
+.dash-stat:nth-child(3) {
+  background: var(--clay-tint);
+  border-color: var(--clay);
+}
+
+/* ---- Board columns: solid sage header bars with white text ---- */
+.scrum-column-header {
+  background: var(--sage);
+  color: #ffffff;
+  border-bottom: 0;
+  border-radius: 17px 17px 0 0;
+}
+
+.scrum-column-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.kanban-column-header {
+  background: var(--sage);
+  color: #ffffff;
+  padding: 9px 12px;
+  border-radius: 10px;
+}
+
+.kanban-column-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* Task cards: white with a mustard edge, like the sprint plan cards */
+.scrum-card {
+  background: #ffffff;
+  border: 1px solid #e6dfcd;
+  border-left: 4px solid var(--mustard);
+}
+
+/* ---- Pills and badges: filled, not outlined ---- */
+.scrum-tag {
+  background: var(--sage-tint);
+  border-color: transparent;
+  color: #4a5a3e;
+}
+
+.scrum-tag-high,
+.priority-high,
+.dash-badge-high {
+  background: var(--clay-tint);
+  border-color: transparent;
+  color: var(--clay-dark);
+}
+
+.scrum-tag-medium,
+.priority-medium,
+.dash-badge-medium {
+  background: var(--mustard-tint);
+  border-color: transparent;
+  color: var(--mustard-dark);
+}
+
+.scrum-tag-low,
+.priority-low,
+.dash-badge-low {
+  background: var(--sage-tint);
+  border-color: transparent;
+  color: #4a5a3e;
+}
+
+.dash-badge-done {
+  background: var(--sage);
+  color: #ffffff;
+}
+
+.status-badge,
+.role-badge {
+  background: var(--sage-tint);
+  color: #4a5a3e;
+}
+
+.sprint-status-planned {
+  background: var(--mustard-tint);
+  color: var(--mustard-dark);
+}
+
+.sprint-status-active {
+  background: var(--sage);
+  color: #ffffff;
+}
+
+.sprint-status-completed {
+  background: #e4e0d3;
+  color: #565b4e;
+}
+
+.pcard-status {
+  background: var(--mustard-tint);
+  color: var(--mustard-dark);
+}
+
+.pcard-status-active {
+  background: var(--sage);
+  color: #ffffff;
+}
+
+.member-chip {
+  background: var(--sage-tint);
+  color: #4a5a3e;
+}
+
+/* Selected option pills (priority, sprint choice) */
+.new-task-pill.selected,
+.new-task-pill:not(.priority-high):not(.priority-medium):not(.priority-low).selected {
+  background: var(--sage);
+  border-color: var(--sage);
+  color: #ffffff;
+}
+
+.new-task-pill.priority-high.selected {
+  background: var(--clay);
+  border-color: var(--clay);
+  color: #ffffff;
+}
+
+.new-task-pill.priority-medium.selected {
+  background: var(--mustard);
+  border-color: var(--mustard);
+  color: #ffffff;
+}
+
+.new-task-pill.priority-low.selected {
+  background: var(--sage);
+  border-color: var(--sage);
+  color: #ffffff;
+}
+
+/* ---- Avatars and buttons ---- */
+.topbar-avatar,
+.team-avatar {
+  background: var(--sage);
+  color: #ffffff;
+}
+
+.primary-button {
+  box-shadow: 0 1px 0 rgba(48, 52, 46, 0.12);
+}
+
+.secondary-button:hover {
+  border-color: var(--mustard);
+  color: var(--charcoal);
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--mustard);
+  outline-offset: 2px;
+}
+
+/* Dropdowns: white, to match the inputs */
+select {
+  background-color: #ffffff;
+}
+
+/* ---- Dashboard (first page after login) ---- */
+
+/* Summary tiles, including the ones inside the sprint panel (which had a higher-priority cream rule) */
+.dash-panel .dash-stat {
+  background: var(--sage-tint);
+  border-color: var(--sage-border);
+}
+
+.dash-panel .dash-stat:nth-child(2) {
+  background: var(--mustard-tint);
+  border-color: var(--mustard);
+}
+
+.dash-panel .dash-stat:nth-child(3) {
+  background: var(--clay-tint);
+  border-color: var(--clay);
+}
+
+.dash-stat > strong {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.dash-stat > span {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* The big sprint panel gets a sage edge on top */
+.dash-panel {
+  border-color: var(--sage-border);
+  border-top: 5px solid var(--sage);
+}
+
+.dash-panel-header h2 {
+  font-family: var(--font-display);
+}
+
+/* "No active sprint" strip */
+.dash-empty {
+  background: var(--mustard-tint);
+  border: 1px solid var(--mustard);
+}
+
+/* Activity and My Tasks cards: one sage, one mustard */
+.dash-card {
+  background: var(--sage-tint);
+  border: 1px solid var(--sage-border);
+}
+
+.dash-card:nth-child(2) {
+  background: var(--mustard-tint);
+  border-color: var(--mustard);
+}
+
+.dash-card h3 {
+  font-family: var(--font-display);
+  color: var(--charcoal);
+}
+
+.dash-activity span,
+.dash-my-tasks span {
+  color: #565b4e;
+}
+
+.dash-my-tasks li {
+  border-left: 4px solid var(--mustard);
+}
+
+.dash-link {
+  color: var(--sage-dark);
+}
+
+/* The original task-priority badges force their text colour, so these must too */
+.dash-badge-high { color: var(--clay-dark) !important; background: var(--clay-tint); }
+.dash-badge-medium { color: var(--mustard-dark) !important; background: var(--mustard-tint); }
+.dash-badge-low { color: #4a5a3e !important; background: var(--sage-tint); }
+.dash-badge-done { color: #ffffff !important; background: var(--sage); }
+
+/*
+ * Boxes are white with a coloured border, like the reference: the colour is
+ * only in the border. Sage for most, mustard for the highlighted one, clay for
+ * the accent. (Filled pills, badges and board column headers stay filled.)
+ */
+.project-info-card > div,
+.dash-stat,
+.dash-panel .dash-stat,
+.dash-card,
+.dash-empty {
+  background: #ffffff;
+  border: 1.5px solid var(--sage);
+}
+
+.project-info-card > div:nth-child(3),
+.dash-stat:nth-child(2),
+.dash-panel .dash-stat:nth-child(2),
+.dash-card:nth-child(2),
+.dash-empty {
+  background: #ffffff;
+  border-color: var(--mustard);
+}
+
+.project-info-card > div:nth-child(4),
+.dash-stat:nth-child(3),
+.dash-panel .dash-stat:nth-child(3) {
+  background: #ffffff;
+  border-color: var(--clay);
+}
+
+/* The big sprint panel: plain sage border all round, no thick top bar */
+.dash-panel {
+  border: 1.5px solid var(--sage);
+}
+
+/* My Tasks rows are pill-shaped, so they get a thin even border instead of a left edge */
+.dash-my-tasks li {
+  border: 1.5px solid var(--sage-border);
+}
+
+/* Dashboard boxes: gently rounded corners (about 12px) instead of full pills, like the reference */
+.dash-stat,
+.dash-panel .dash-stat {
+  border-radius: 14px;
+}
+
+.dash-panel,
+.dash-card {
+  border-radius: 16px;
+}
+
+.dash-my-tasks li,
+.dash-empty {
+  border-radius: 12px;
+}

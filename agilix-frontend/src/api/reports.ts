@@ -20,7 +20,7 @@ export interface SeriesDay {
   remaining: number | null;
 }
 
-/** Day-by-day points: used for both the burndown and the burnup chart. */
+/** Day-by-day points for the burndown chart. */
 export interface SprintSeries {
   sprint: ReportSprint;
   startScope: number;
@@ -28,6 +28,24 @@ export interface SprintSeries {
   completedPoints: number;
   remainingPoints: number;
   days: SeriesDay[];
+}
+
+/** Hours tracked per person in one sprint, against a limit (the "burnout" chart). */
+export interface BurnoutPerson {
+  userId: string;
+  name: string;
+  hours: number;
+  openTasks: number;
+  level: "ok" | "near" | "high";
+  note: string | null;
+}
+
+export interface BurnoutReport {
+  sprint: ReportSprint;
+  sprintDays: number;
+  weeklyLimitHours: number;
+  limitHours: number;
+  people: BurnoutPerson[];
 }
 
 export interface VelocityReport {
@@ -91,3 +109,6 @@ export const getSprintReport = (sprintId: string) =>
 
 export const getMyReport = (projectId: string) =>
   api<MyReport>(`/reports/scrum/my/${projectId}`);
+
+export const getBurnout = (sprintId: string) =>
+  api<BurnoutReport>(`/reports/scrum/burnout/${sprintId}`);
