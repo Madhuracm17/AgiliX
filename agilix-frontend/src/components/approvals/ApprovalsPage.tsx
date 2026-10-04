@@ -6,6 +6,7 @@ import {
   getApprovals,
   rejectRequest,
   type ApprovalRequest,
+  type PlaceAction,
 } from "../../api/approvals";
 import { canEditTaskPlan, readError, timeAgo } from "../scrum/taskDisplay";
 import "./approvals.css";
@@ -31,6 +32,11 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  // The request whose "where should the task go?" choices are open, and whether the
+  // manager is approving it (a new task) or rejecting it (a task asked to be deleted).
+  const [choosing, setChoosing] = useState<{ id: string; mode: "approve" | "reject" } | null>(
+    null,
+  );
 
   const load = async () => {
     if (!projectId) return;
@@ -48,11 +54,12 @@ export default function ApprovalsPage() {
     load();
   }, [projectId]);
 
-  const decide = async (request: ApprovalRequest, approve: boolean) => {
+  const decide = async (request: ApprovalRequest, approve: boolean, action?: PlaceAction) => {
     try {
       setBusyId(request._id);
-      if (approve) await approveRequest(request._id);
-      else await rejectRequest(request._id);
+      if (approve) await approveRequest(request._id, action);
+      else await rejectRequest(request._id, action);
+      setChoosing(null);
       await load();
     } catch (err) {
       alert(readError(err, "Could not save your decision. Please try again."));
@@ -77,24 +84,120 @@ export default function ApprovalsPage() {
       </div>
 
       {request.status === "pending" && isReviewer ? (
-        <div className="approval-actions">
-          <button
-            type="button"
-            className="primary-button"
-            disabled={busyId === request._id}
-            onClick={() => decide(request, true)}
-          >
-            Approve
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={busyId === request._id}
-            onClick={() => decide(request, false)}
-          >
-            Reject
-          </button>
-        </div>
+        choosing?.id === request._id ? (
+          <div className="approval-choices">
+            <span className="approval-choices-label">
+              {choosing.mode === "approve"
+                ? "Where should the new task go?"
+                : "The task is kept. Do you want to move it?"}
+            </span>
+            <div className="approval-actions">
+              {choosing.mode === "approve" ? (
+                <>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={busyId === request._id}
+                    onClick={() => decide(request, true, "backlog")}
+                  >
+                    Add to backlog
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={busyId === request._id || !request.activeSprintName}
+                    title={
+                      request.activeSprintName
+                        ? `Add it to ${request.activeSprintName}`
+                        : "There is no active sprint right now"
+                    }
+                    onClick={() => decide(request, true, "sprint")}
+                  >
+                    Add to current sprint
+                  </button>
+                </>
+              ) : (
+                <>
+                  {request.taskLocation !== "backlog" && request.taskLocation !== "missing" && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={busyId === request._id}
+                      onClick={() => decide(request, false, "backlog")}
+                    >
+                      Move to backlog
+                    </button>
+                  )}
+                  {request.taskLocation !== "current_sprint" &&
+                    request.taskLocation !== "missing" && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={busyId === request._id || !request.activeSprintName}
+                        title={
+                          request.activeSprintName
+                            ? `Move it into ${request.activeSprintName}`
+                            : "There is no active sprint right now"
+                        }
+                        onClick={() => decide(request, false, "sprint")}
+                      >
+                        Move to current sprint
+                      </button>
+                    )}
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={busyId === request._id}
+                    onClick={() => decide(request, false)}
+                  >
+                    {request.taskLocation === "backlog"
+                      ? "Keep in backlog"
+                      : request.taskLocation === "missing"
+                        ? "Reject"
+                        : "Keep in sprint"}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="approval-cancel"
+                disabled={busyId === request._id}
+                onClick={() => setChoosing(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="approval-actions">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busyId === request._id}
+              onClick={() => {
+                if (request.type === "create_task") {
+                  setChoosing({ id: request._id, mode: "approve" });
+                } else if (window.confirm(`Delete “${request.taskTitle}”? This cannot be undone.`)) {
+                  decide(request, true);
+                }
+              }}
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busyId === request._id}
+              onClick={() =>
+                request.type === "delete_task"
+                  ? setChoosing({ id: request._id, mode: "reject" })
+                  : decide(request, false)
+              }
+            >
+              Reject
+            </button>
+          </div>
+        )
       ) : (
         <span className={`approval-status approval-${request.status}`}>
           {STATUS_LABEL[request.status]}

@@ -75,7 +75,10 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
   const { user } = useAuth();
   // Changing a task's priority after it exists is for managers and admins.
   const canEditPlan = canEditTaskPlan(user.role);
-  const { pendingDeleteIds, markRequested } = usePendingDeletes(projectId, !canEditPlan);
+  const { pendingDeleteIds, declinedDeleteIds, markRequested } = usePendingDeletes(
+    projectId,
+    !canEditPlan,
+  );
   // The project team, for the "Assignee" dropdown (admins and managers only).
   const people = useProjectPeople(canEditPlan ? projectId : undefined);
   const navigate = useNavigate();
@@ -356,6 +359,7 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
             onClick={() => navigate(`/projects/${projectId}/tasks/new?sprint=backlog`)}
           >
             <strong>+ Create New Task</strong>
+            <span>Create a task manually</span>
           </button>
         </div>
 
@@ -484,7 +488,6 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                   {backlog.length} item{backlog.length === 1 ? "" : "s"}
                 </span>
               </h2>
-              <span className="scrum-panel-meta">Click a task for AI help</span>
             </div>
 
             {backlog.length === 0 ? (
@@ -640,19 +643,27 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                                           type="button"
                                           className="task-delete-button"
                                           onClick={() => removeTask(task)}
-                                          disabled={!canEditPlan && pendingDeleteIds.has(task._id)}
+                                          disabled={
+                                            !canEditPlan &&
+                                            (pendingDeleteIds.has(task._id) ||
+                                              declinedDeleteIds.has(task._id))
+                                          }
                                         >
                                           {canEditPlan
                                             ? "Delete task"
-                                            : pendingDeleteIds.has(task._id)
-                                              ? "Deletion requested"
-                                              : "Request deletion"}
+                                            : declinedDeleteIds.has(task._id)
+                                              ? "Deletion declined"
+                                              : pendingDeleteIds.has(task._id)
+                                                ? "Deletion requested"
+                                                : "Request deletion"}
                                         </button>
                                         {!canEditPlan && (
                                           <span>
-                                            {pendingDeleteIds.has(task._id)
-                                              ? "Waiting for a manager."
-                                              : "A manager has to approve it."}
+                                            {declinedDeleteIds.has(task._id)
+                                              ? "A manager declined this request."
+                                              : pendingDeleteIds.has(task._id)
+                                                ? "Waiting for a manager."
+                                                : "A manager has to approve it."}
                                           </span>
                                         )}
                                       </>

@@ -1,27 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { getApprovals } from "../../api/approvals";
+import { getDeleteRequestState } from "../../api/approvals";
 
 /**
- * The tasks this person has already asked a manager to delete (and the manager
- * has not answered yet), so the "Request deletion" button can be switched off.
- * Only used for developers and testers.
+ * The tasks that cannot be asked about any more, so the "Request deletion" button
+ * can be switched off: the ones with a request waiting for a manager, and the ones
+ * a manager already declined (whoever asked). Only used for developers and testers.
  */
 export function usePendingDeletes(projectId: string | undefined, enabled: boolean) {
-  const [ids, setIds] = useState<Set<string>>(new Set());
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  const [declined, setDeclined] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!projectId || !enabled) return;
     let cancelled = false;
-    getApprovals(projectId)
-      .then((list) => {
+    getDeleteRequestState(projectId)
+      .then((state) => {
         if (cancelled) return;
-        setIds(
-          new Set(
-            list
-              .filter((r) => r.type === "delete_task" && r.status === "pending" && r.task)
-              .map((r) => String(r.task)),
-          ),
-        );
+        setPending(new Set((state.pending ?? []).map(String)));
+        setDeclined(new Set((state.declined ?? []).map(String)));
       })
       .catch(() => {
         // Not important: the server still refuses a second request.
@@ -32,8 +28,8 @@ export function usePendingDeletes(projectId: string | undefined, enabled: boolea
   }, [projectId, enabled]);
 
   const markRequested = useCallback((taskId: string) => {
-    setIds((prev) => new Set(prev).add(taskId));
+    setPending((prev) => new Set(prev).add(taskId));
   }, []);
 
-  return { pendingDeleteIds: ids, markRequested };
+  return { pendingDeleteIds: pending, declinedDeleteIds: declined, markRequested };
 }

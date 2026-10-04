@@ -57,7 +57,10 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   const signOff = canMarkDone(user.role);
   // Admins and managers can reassign a task to another team member.
   const canReassign = canEditTaskPlan(user.role);
-  const { pendingDeleteIds, markRequested } = usePendingDeletes(projectId, !canReassign);
+  const { pendingDeleteIds, declinedDeleteIds, markRequested } = usePendingDeletes(
+    projectId,
+    !canReassign,
+  );
   const people = useProjectPeople(canReassign ? projectId : undefined);
 
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -699,13 +702,18 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                                 type="button"
                                 className="task-delete-button"
                                 onClick={() => removeTask(task)}
-                                disabled={!canReassign && pendingDeleteIds.has(task._id)}
+                                disabled={
+                                  !canReassign &&
+                                  (pendingDeleteIds.has(task._id) || declinedDeleteIds.has(task._id))
+                                }
                               >
                                 {canReassign
                                   ? "Delete task"
-                                  : pendingDeleteIds.has(task._id)
-                                    ? "Deletion requested"
-                                    : "Request deletion"}
+                                  : declinedDeleteIds.has(task._id)
+                                    ? "Deletion declined"
+                                    : pendingDeleteIds.has(task._id)
+                                      ? "Deletion requested"
+                                      : "Request deletion"}
                               </button>
                             )}
                           </div>

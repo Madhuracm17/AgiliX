@@ -1029,40 +1029,6 @@ function ProjectOverviewPage() {
           </button>
         </div>
 
-        <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <div>
-              <span className="eyebrow">REPORTS</span>
-              <h2>Progress</h2>
-            </div>
-          </div>
-
-          <p>
-            Track sprint velocity, completion progress and project
-            performance. Sprint risk predictions are under AI Insights.
-          </p>
-
-          <div className="dashboard-card-actions">
-            {currentUser.role !== "admin" && (
-              <button
-                className="secondary-button"
-                onClick={() => navigate(`/projects/${projectId}/reports`)}
-              >
-                View Reports
-              </button>
-            )}
-
-            {(project.methodology || "scrum") === "scrum" && (
-              <button
-                className="secondary-button"
-                onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
-              >
-                AI Insights
-              </button>
-            )}
-          </div>
-        </div>
-
       </div>
 
       <div className="project-workspace-card">

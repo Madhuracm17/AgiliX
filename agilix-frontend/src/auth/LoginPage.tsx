@@ -249,7 +249,7 @@ export default function LoginPage({ onLoggedIn }: LoginPageProps) {
               id="auth-password"
               type="password"
               autoComplete={isRegister || isReset ? "new-password" : "current-password"}
-              placeholder={isRegister || isReset ? PASSWORD_HINT : "Your password"}
+              placeholder={isRegister || isReset ? "" : "Your password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />

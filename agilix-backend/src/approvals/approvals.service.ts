@@ -26,6 +26,10 @@ export interface PendingApproval {
   message: string;
 }
 
+/** Where a manager can put a task: the backlog, or the current (active) sprint. */
+export type PlaceAction = 'backlog' | 'sprint';
+const PLACE_ACTIONS: PlaceAction[] = ['backlog', 'sprint'];
+
 const MANAGER_ONLY_MESSAGE =
   'Only a manager or an admin can approve or reject requests. Please contact a manager.';
 
@@ -86,6 +90,17 @@ export class ApprovalsService {
     if (already) {
       throw new BadRequestException('A request to delete this task is already waiting for a manager.');
     }
+    // Once a manager has said no, the same task cannot be asked about again.
+    const declined = await this.approvalModel.exists({
+      task: taskId,
+      type: ApprovalType.DELETE_TASK,
+      status: ApprovalStatus.REJECTED,
+    });
+    if (declined) {
+      throw new BadRequestException(
+        'A manager has already declined the request to delete this task, so it cannot be requested again.',
+      );
+    }
 
     const request = await this.approvalModel.create({
       project: projectId,
@@ -134,41 +149,115 @@ export class ApprovalsService {
         .lean()
         .exec(),
     ]);
-    return [...pending, ...decided];
+    // Waiting delete requests also say where the task is now, so a manager is only
+    // offered the moves that make sense (not "to the backlog" for a backlog task).
+    const active = isReviewer ? await this.activeSprint(projectId) : null;
+    const enriched = await Promise.all(
+      pending.map(async (request) => {
+        if (!isReviewer) return request;
+        // Every waiting request says which sprint is the current one, so "add to the
+        // current sprint" can be switched off when there is none.
+        if (request.type !== ApprovalType.DELETE_TASK || !request.task) {
+          return { ...request, activeSprintName: active?.name ?? null };
+        }
+        const task = (await this.connection
+          .model('Task')
+          .findById(request.task)
+          .select('sprint')
+          .lean()
+          .exec()) as unknown as { sprint?: unknown } | null;
+        const where = !task
+          ? 'missing'
+          : !task.sprint
+            ? 'backlog'
+            : active && String(task.sprint) === String(active._id)
+              ? 'current_sprint'
+              : 'other_sprint';
+        return { ...request, taskLocation: where, activeSprintName: active?.name ?? null };
+      }),
+    );
+    return [...enriched, ...decided];
   }
 
-  async decide(user: AuthUser, id: string, approve: boolean) {
+  /**
+   * Which tasks cannot be asked about any more, whoever asked: the ones with a
+   * delete request waiting, and the ones a manager already declined. Lets the web
+   * app switch off "Request deletion" for everyone on the project.
+   */
+  async deleteRequestState(projectId: string): Promise<{ pending: string[]; declined: string[] }> {
+    const rows = (await this.approvalModel
+      .find({
+        project: projectId,
+        type: ApprovalType.DELETE_TASK,
+        status: { $in: [ApprovalStatus.PENDING, ApprovalStatus.REJECTED] },
+      })
+      .select('task status')
+      .lean()
+      .exec()) as unknown as { task?: unknown; status?: string }[];
+    const ids = (status: ApprovalStatus) =>
+      rows.filter((r) => r.task && r.status === status).map((r) => String(r.task));
+    return { pending: ids(ApprovalStatus.PENDING), declined: ids(ApprovalStatus.REJECTED) };
+  }
+
+  /**
+   * A manager (or admin) decides a request.
+   * - Approve a create request: the task is created, in the backlog or (action
+   *   "sprint") in the current sprint.
+   * - Approve a delete request: the task is deleted.
+   * - Reject a delete request: the task is kept. Optionally (action "backlog" or
+   *   "sprint") it is also moved to the backlog or into the current sprint.
+   * - Reject a create request: nothing is created.
+   */
+  async decide(user: AuthUser, id: string, approve: boolean, action?: PlaceAction) {
     if (user.role !== UserRole.ADMIN && user.role !== UserRole.MANAGER) {
       throw new ForbiddenException(MANAGER_ONLY_MESSAGE);
     }
     if (!isValidObjectId(id)) throw new BadRequestException('Invalid request id');
+    if (action !== undefined && !PLACE_ACTIONS.includes(action)) {
+      throw new BadRequestException('Choose backlog or sprint.');
+    }
 
     const request = await this.approvalModel.findById(id);
     if (!request) throw new NotFoundException('Request not found');
-    await this.access.assertProject(user, String(request.project));
+    const projectId = String(request.project);
+    await this.access.assertProject(user, projectId);
 
     if (request.status !== ApprovalStatus.PENDING) {
       throw new BadRequestException('This request has already been decided.');
     }
 
     let outcome = '';
-    if (approve) {
-      if (request.type === ApprovalType.CREATE_TASK) {
+    if (request.type === ApprovalType.CREATE_TASK) {
+      if (approve) {
         const data = { ...(request.taskData ?? {}) } as Record<string, unknown> & {
           assignee?: string;
         };
         // The person may have left the team since the request was made.
         if (data.assignee) {
-          await this.access.assertAssignee(String(request.project), String(data.assignee));
+          await this.access.assertAssignee(projectId, String(data.assignee));
         }
-        await this.connection.model('Task').create({ ...data, project: request.project });
-        outcome = 'approved. The task has been created.';
-      } else if (request.task) {
-        const deleted = await deleteTaskAndTime(this.connection, String(request.task));
-        outcome = deleted ? 'approved. The task has been deleted.' : 'approved (the task was already gone).';
+        let sprintFields: Record<string, unknown> = { sprint: null };
+        let where = 'in the backlog';
+        if (action === 'sprint') {
+          const sprint = await this.requireActiveSprint(projectId);
+          sprintFields = { sprint: sprint._id, addedToSprintAt: new Date() };
+          where = `in the current sprint (${sprint.name})`;
+        }
+        await this.connection.model('Task').create({ ...data, project: request.project, ...sprintFields });
+        outcome = `approved. The task has been created ${where}.`;
+      } else {
+        outcome = 'not approved.';
       }
-    } else {
-      outcome = 'not approved.';
+    } else if (request.task) {
+      const taskId = String(request.task);
+      if (approve) {
+        const deleted = await deleteTaskAndTime(this.connection, taskId);
+        outcome = deleted ? 'approved. The task has been deleted.' : 'approved (the task was already gone).';
+      } else if (action) {
+        outcome = `not approved. ${await this.moveTask(projectId, taskId, action)}`;
+      } else {
+        outcome = 'not approved. The task was kept.';
+      }
     }
 
     request.status = approve ? ApprovalStatus.APPROVED : ApprovalStatus.REJECTED;
@@ -180,11 +269,53 @@ export class ApprovalsService {
     await this.notifications.notify([String(request.requestedBy)], {
       kind: 'approval_decided',
       text: `Your request to ${verb} “${request.taskTitle}” was ${outcome}`,
-      detail: await this.projectName(String(request.project)),
-      link: `/projects/${String(request.project)}/approvals`,
+      detail: await this.projectName(projectId),
+      link: `/projects/${projectId}/approvals`,
     });
 
     return request;
+  }
+
+  /** Keeps a task and puts it in the backlog or the current sprint. Returns a sentence about it. */
+  private async moveTask(projectId: string, taskId: string, action: PlaceAction): Promise<string> {
+    const Task = this.connection.model('Task');
+    const task = (await Task.findById(taskId).select('sprint').lean().exec()) as unknown as
+      | { sprint?: unknown }
+      | null;
+    if (!task) throw new NotFoundException('This task no longer exists.');
+
+    if (action === 'backlog') {
+      if (!task.sprint) throw new BadRequestException('This task is already in the backlog.');
+      await Task.updateOne({ _id: taskId }, { $set: { sprint: null, addedToSprintAt: null } }).exec();
+      return 'The task was kept and moved to the backlog.';
+    }
+
+    const sprint = await this.requireActiveSprint(projectId);
+    if (task.sprint && String(task.sprint) === String(sprint._id)) {
+      throw new BadRequestException('This task is already in the current sprint.');
+    }
+    await Task.updateOne(
+      { _id: taskId },
+      { $set: { sprint: sprint._id, addedToSprintAt: new Date() } },
+    ).exec();
+    return `The task was kept and moved to the current sprint (${sprint.name}).`;
+  }
+
+  private async requireActiveSprint(projectId: string): Promise<{ _id: unknown; name: string }> {
+    const sprint = await this.activeSprint(projectId);
+    if (!sprint) {
+      throw new BadRequestException('There is no active sprint right now. Start a sprint first.');
+    }
+    return sprint;
+  }
+
+  private async activeSprint(projectId: string): Promise<{ _id: unknown; name: string } | null> {
+    return (await this.connection
+      .model('Sprint')
+      .findOne({ project: projectId, status: 'active' })
+      .select('name')
+      .lean()
+      .exec()) as unknown as { _id: unknown; name: string } | null;
   }
 
   // ---------------------------------------------------------------------------

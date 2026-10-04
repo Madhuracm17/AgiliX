@@ -136,6 +136,8 @@ export default function ReportsPage() {
   }, [projectId]);
 
   const isScrum = !!project && (project.methodology || "scrum") !== "kanban";
+  // Only a project that has loaded as Kanban goes back to the Kanban board.
+  const isKanban = !!project && project.methodology === "kanban";
 
   return (
     <div>
@@ -143,9 +145,9 @@ export default function ReportsPage() {
         <div>
           <p
             className="eyebrow breadcrumb-link"
-            onClick={() => navigate(`/projects/${projectId}`)}
+            onClick={() => navigate(`/projects/${projectId}/${isKanban ? "kanban" : "sprints"}`)}
           >
-            ← Back to project
+            ← {isKanban ? "Kanban Board" : "Scrum Board"}
           </p>
           <h1>Reports</h1>
           <p className="page-description">
@@ -652,28 +654,6 @@ function MyReports({ projectId }: { projectId: string }) {
             completedStoryPoints={progress.donePoints}
             inProgressStoryPoints={0}
           />
-        )}
-      </section>
-
-      <section className="rpt-section">
-        <h2>My work</h2>
-        {report.tasks.length === 0 ? (
-          <p className="rpt-empty">Tasks assigned to you will appear here.</p>
-        ) : (
-          <ul className="rpt-list">
-            {report.tasks.map((task) => (
-              <li key={task.id}>
-                <div>
-                  {task.title}
-                  <div className="rpt-sub">
-                    {STATUS_LABEL[task.status] ?? task.status} · {task.priority} priority ·{" "}
-                    {task.points} pts · {task.sprint ?? "Backlog"}
-                  </div>
-                </div>
-                <span className="rpt-time">{formatTime(task.seconds)}</span>
-              </li>
-            ))}
-          </ul>
         )}
       </section>
     </>
