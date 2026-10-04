@@ -253,7 +253,7 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                   />
                   <StatTile label="Days Left" value={daysLeft(activeSprint.endDate)} />
                   <div className="dash-stat">
-                    <span>Confidence</span>
+                    <span>Expected Completion</span>
                     {risk ? (
                       <strong className={`dash-risk dash-risk-${risk.risk}`}>
                         {risk.completionForecastPercent}%
@@ -265,7 +265,7 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                         onClick={checkConfidence}
                         disabled={checkingRisk}
                       >
-                        {checkingRisk ? "Checking…" : "Check with AI"}
+                        {checkingRisk ? "Checking…" : "View Estimate"}
                       </button>
                     )}
                   </div>
@@ -274,7 +274,7 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                 {risk && (
                   <p className="dash-muted dash-ai-line">
                     <span className="dash-ai-text" title={risk.reasoning}>
-                      <strong>AI:</strong> {firstSentence(risk.reasoning)}
+                      <strong>AI estimate:</strong> {firstSentence(risk.reasoning)}
                     </span>
                     <button
                       type="button"
