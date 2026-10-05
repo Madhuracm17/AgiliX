@@ -8,6 +8,12 @@ import {
   removeProjectMember,
   type Project,
 } from "../../api/projects";
+import {
+  cancelInvite,
+  getProjectInvites,
+  sendInvite,
+  type ProjectInvite,
+} from "../../api/teamInvites";
 import { initials, readError, sameId } from "../scrum/taskDisplay";
 import "./team.css";
 
@@ -17,63 +23,85 @@ function roleLabel(role: string | undefined): string {
 }
 
 /**
- * Team of one project. Everyone on the project can see it; only admins and managers can
- * add or remove people.
+ * Team of one project. Everyone on the project can see it.
+ *  - Admins add managers straight to the team.
+ *  - Managers send a team request to developers and testers; they join once they accept.
  */
 export default function ProjectTeamPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isAdmin = user.role === "admin" || user.role === "manager";
+  const isAdmin = user.role === "admin";
+  const isManager = user.role === "manager";
+  const canManage = isAdmin || isManager;
 
   const [project, setProject] = useState<Project | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [invites, setInvites] = useState<ProjectInvite[]>([]);
   const [choice, setChoice] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     if (!projectId) return;
     try {
       setError("");
-      const [projectData, userData] = await Promise.all([
+      const [projectData, userData, inviteData] = await Promise.all([
         getProject(projectId),
-        isAdmin ? getUsers() : Promise.resolve([] as User[]),
+        canManage ? getUsers() : Promise.resolve([] as User[]),
+        canManage ? getProjectInvites(projectId) : Promise.resolve([] as ProjectInvite[]),
       ]);
       setProject(projectData);
       setUsers(userData);
+      setInvites(inviteData);
     } catch (err) {
       setError(readError(err, "Failed to load the team"));
     } finally {
       setLoading(false);
     }
-  }, [projectId, isAdmin]);
+  }, [projectId, canManage]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const members = project?.members ?? [];
-  const isOnTeam = (id: string) =>
-    sameId(project?.owner, id) || members.some((m) => sameId(m, id));
+  // Owner first, then the members, each person once.
+  const people: User[] = [];
+  for (const person of [project?.owner, ...(project?.members ?? [])]) {
+    if (person && person._id && !people.some((p) => p._id === person._id)) people.push(person);
+  }
 
-  // Roles come from the people list, which only admins and managers load.
-  const roleOf = (id: string) => roleLabel(users.find((u) => sameId(u, id))?.role);
+  const isOnTeam = (id: string) => people.some((p) => sameId(p, id));
+  const hasRequest = (id: string) => invites.some((i) => i.invitee && sameId(i.invitee, id));
 
-  // People who are registered but not yet on this project.
-  const addable = users.filter((u) => !isOnTeam(u._id));
+  // Admins choose managers; managers choose developers and testers.
+  const addable = users.filter((u) =>
+    isAdmin
+      ? u.role === "manager" && !isOnTeam(u._id)
+      : (u.role === "developer" || u.role === "tester") && !isOnTeam(u._id) && !hasRequest(u._id),
+  );
 
   const add = async () => {
     if (!projectId || busy || !choice) return;
     try {
       setBusy(true);
       setError("");
-      await addProjectMember(projectId, choice);
+      setNotice("");
+      const chosen = users.find((u) => u._id === choice);
+      if (isAdmin) {
+        await addProjectMember(projectId, choice);
+      } else {
+        await sendInvite(projectId, choice);
+        setNotice(
+          `Request sent to ${chosen?.name ?? "the person"}. They join the team once they accept.`,
+        );
+      }
       setChoice("");
       await load();
     } catch (err) {
-      setError(readError(err, "Failed to add the member"));
+      setError(readError(err, isAdmin ? "Failed to add the manager" : "Failed to send the request"));
     } finally {
       setBusy(false);
     }
@@ -84,6 +112,7 @@ export default function ProjectTeamPage() {
     try {
       setBusy(true);
       setError("");
+      setNotice("");
       await removeProjectMember(projectId, member._id);
       await load();
     } catch (err) {
@@ -91,6 +120,29 @@ export default function ProjectTeamPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const withdraw = async (invite: ProjectInvite) => {
+    if (busy) return;
+    try {
+      setBusy(true);
+      setError("");
+      setNotice("");
+      await cancelInvite(invite._id);
+      await load();
+    } catch (err) {
+      setError(readError(err, "Failed to withdraw the request"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Admins remove managers; managers remove developers and testers, never themselves.
+  const canRemove = (member: User) => {
+    if (sameId(member, project?.owner)) return false;
+    if (sameId(member, user._id)) return false;
+    if (isAdmin) return true;
+    return isManager && member.role !== "manager" && member.role !== "admin";
   };
 
   if (loading) {
@@ -123,22 +175,28 @@ export default function ProjectTeamPage() {
           <h1>Team</h1>
           <p className="page-description">
             {isAdmin
-              ? `Choose who is on ${project.name}.`
-              : `People working on ${project.name}.`}
+              ? `Add the manager of ${project.name}. The manager then asks developers and testers to join.`
+              : isManager
+                ? `Ask developers and testers to join ${project.name}. They join once they accept.`
+                : `People working on ${project.name}.`}
           </p>
         </div>
       </div>
 
-      {isAdmin && (
+      {canManage && (
         <div className="form-card">
-          <label htmlFor="member-choice">Add a team member</label>
+          <label htmlFor="member-choice">
+            {isAdmin ? "Add a manager" : "Send a team request"}
+          </label>
           <div className="member-invite">
             <select
               id="member-choice"
               value={choice}
               onChange={(e) => setChoice(e.target.value)}
             >
-              <option value="">Select a person</option>
+              <option value="">
+                {isAdmin ? "Select a manager" : "Select a developer or tester"}
+              </option>
               {addable.map((u) => (
                 <option key={u._id} value={u._id}>
                   {u.name} · {roleLabel(u.role)} · {u.email}
@@ -150,7 +208,7 @@ export default function ProjectTeamPage() {
               onClick={add}
               disabled={busy || !choice}
             >
-              Add
+              {isAdmin ? "Add" : "Send request"}
             </button>
           </div>
         </div>
@@ -161,37 +219,54 @@ export default function ProjectTeamPage() {
           {error}
         </p>
       )}
+      {notice && <p className="team-requests-notice">{notice}</p>}
 
-      <div className="project-team-list">
-        {project.owner && (
-          <div className="project-team-row">
-            <div className="team-avatar">{initials(project.owner.name)}</div>
-            <div className="project-team-info">
-              <h2>{project.owner.name}</h2>
-              <p>
-                {project.owner.email}
-                {roleOf(project.owner._id) && ` · ${roleOf(project.owner._id)}`}
-              </p>
+      {canManage && invites.length > 0 && (
+        <section className="team-pending">
+          <h2>
+            Waiting for an answer <span className="team-requests-count">{invites.length}</span>
+          </h2>
+          {invites.map((invite) => (
+            <div className="team-pending-row" key={invite._id}>
+              <span>
+                <strong>{invite.invitee?.name ?? "Someone"}</strong>
+                {invite.invitee?.role ? ` · ${roleLabel(invite.invitee.role)}` : ""}
+                {invite.invitedBy ? ` · asked by ${invite.invitedBy.name}` : ""}
+              </span>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={busy}
+                onClick={() => withdraw(invite)}
+              >
+                Withdraw
+              </button>
             </div>
-            <span className="role-badge">Owner</span>
-          </div>
-        )}
+          ))}
+        </section>
+      )}
 
-        {members
-          .filter((m) => !sameId(m, project.owner))
-          .map((member) => (
-            <div className="project-team-row" key={member._id}>
-              <div className="team-avatar">{initials(member.name)}</div>
-              <div className="project-team-info">
-                <h2>{member.name}</h2>
-                <p>
-                  {member.email}
-                  {roleOf(member._id) && ` · ${roleOf(member._id)}`}
-                </p>
+      <div className="project-team-grid">
+        {people.map((member) => {
+          const isMe = sameId(member, user._id);
+          const isOwner = sameId(member, project.owner);
+          return (
+            <div className="project-team-card" key={member._id}>
+              <div className="project-team-card-top">
+                <div className="team-avatar">{initials(member.name)}</div>
+                <div className="project-team-info">
+                  <h2>{member.name}</h2>
+                  <p className="project-team-email">{member.email}</p>
+                </div>
               </div>
-              {isAdmin && (
+              <div className="project-team-tags">
+                <span className="role-badge">{roleLabel(member.role)}</span>
+                {isOwner && <span className="role-badge role-badge-owner">Owner</span>}
+                {isMe && <span className="project-team-me">Myself</span>}
+              </div>
+              {canRemove(member) && (
                 <button
-                  className="secondary-button"
+                  className="secondary-button project-team-remove"
                   onClick={() => remove(member)}
                   disabled={busy}
                 >
@@ -199,16 +274,19 @@ export default function ProjectTeamPage() {
                 </button>
               )}
             </div>
-          ))}
-
-        {members.filter((m) => !sameId(m, project.owner)).length === 0 && (
-          <p className="page-description">
-            {isAdmin
-              ? "No team members yet. Add someone above."
-              : "No other team members yet."}
-          </p>
-        )}
+          );
+        })}
       </div>
+
+      {people.length <= 1 && (
+        <p className="page-description">
+          {isAdmin
+            ? "No manager yet. Add one above."
+            : isManager
+              ? "No other team members yet. Send a request above."
+              : "No other team members yet."}
+        </p>
+      )}
     </div>
   );
 }

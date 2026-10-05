@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getSprints, type Sprint } from "../../api/sprints";
 import { useAuth } from "../../auth/auth-context";
-import { useProjectPeople } from "../team/useProjectPeople";
+import { personLabel, useProjectPeople } from "../team/useProjectPeople";
 import {
   TASK_TYPES,
   addTaskToSprint,
@@ -72,6 +72,17 @@ export default function NewTaskPage() {
   // Developers and testers send a request; the approved task is created in the backlog.
   const goesToSprint =
     canAssignOthers && sprintChoice === "current" && activeSprint !== null;
+
+  // After a request was sent: an empty form, so another one can be sent.
+  const sendAnother = () => {
+    setSentMessage("");
+    setError("");
+    setTitle("");
+    setDescription("");
+    setPriority("medium");
+    setType("");
+    setStoryPoints(null);
+  };
 
   const leave = () =>
     navigate(`/projects/${projectId}/${goesToSprint ? "sprints" : "backlog"}`);
@@ -268,14 +279,13 @@ export default function NewTaskPage() {
                   <option value="">Unassigned</option>
                   {people.map((person) => (
                     <option key={person._id} value={person._id}>
-                      {person.name}
-                      {person._id === user._id ? " (me)" : ""}
+                      {personLabel(person, user._id)}
                     </option>
                   ))}
                 </>
               ) : (
                 <>
-                  <option value={user._id}>Me ({user.name})</option>
+                  <option value={user._id}>Myself</option>
                   <option value="">Unassigned</option>
                 </>
               )}
@@ -295,8 +305,11 @@ export default function NewTaskPage() {
               {sentMessage}
             </p>
             <div className="form-actions">
-              <button className="primary-button" onClick={leave}>
+              <button className="secondary-button" onClick={leave}>
                 Back
+              </button>
+              <button className="primary-button" onClick={sendAnother}>
+                Send another request
               </button>
             </div>
           </>

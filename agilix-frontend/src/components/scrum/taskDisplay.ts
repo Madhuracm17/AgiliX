@@ -80,6 +80,21 @@ function toDateInput(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** The last day of a sprint that starts on `startDate` (YYYY-MM-DD) and lasts `weeks` weeks. */
+export function endDateFor(startDate: string, weeks: number): string {
+  const end = new Date(`${startDate}T00:00:00`);
+  end.setDate(end.getDate() + weeks * 7 - 1);
+  return toDateInput(end);
+}
+
+/** How many whole weeks (1 to 6) a sprint from `startDate` to `endDate` lasts, rounded to the nearest. */
+export function weeksBetween(startDate: string, endDate: string): number {
+  const start = new Date(`${startDate}T00:00:00`).getTime();
+  const end = new Date(`${endDate}T00:00:00`).getTime();
+  const days = Math.round((end - start) / 86400000) + 1;
+  return Math.min(6, Math.max(1, Math.round(days / 7)));
+}
+
 /**
  * Dates for a new sprint of `weeks` weeks. It starts the day after the last
  * planned/active sprint ends (so sprints line up one after another), or

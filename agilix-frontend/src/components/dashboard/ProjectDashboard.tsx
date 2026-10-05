@@ -221,9 +221,11 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
             {!activeSprint ? (
               <div className="dash-empty">
                 <p>No active sprint right now.</p>
-                <button className="secondary-button" onClick={() => navigate("/projects")}>
-                  Open All Projects
-                </button>
+                {(user.role === "admin" || user.role === "manager") && (
+                  <button className="secondary-button" onClick={() => navigate("/projects")}>
+                    Open All Projects
+                  </button>
+                )}
               </div>
             ) : (
               <>

@@ -2,12 +2,10 @@ import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "rea
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { usePendingDeletes } from "../approvals/usePendingDeletes";
-import { useProjectPeople } from "../team/useProjectPeople";
+import { personLabel, useProjectPeople } from "../team/useProjectPeople";
 import { createSprint, getSprints, type Sprint } from "../../api/sprints";
 import {
   deleteTask,
-  getSprintStats,
-  getSprintTasks,
   getTasks,
   isPendingApproval,
   updateTask,
@@ -116,14 +114,27 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
     }
   };
 
+  // The sprint's tasks come from the project's task list (the same list the
+  // Product Backlog page uses), so every task in the sprint shows up here, however
+  // it got there (added by a manager, or approved from a request).
   const loadSprintDetails = async (sprintId: string) => {
+    if (!projectId) return;
     try {
-      const [taskData, statsData] = await Promise.all([
-        getSprintTasks(sprintId),
-        getSprintStats(sprintId),
-      ]);
+      const all = await getTasks(projectId);
+      const taskData = all.filter((t) => sameId(t.sprint, sprintId));
+      const count = (status: Task["status"]) => taskData.filter((t) => t.status === status).length;
+      const points = (list: Task[]) => list.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
+      const done = taskData.filter((t) => t.status === "done");
       setSprintTasks(taskData);
-      setStats(statsData);
+      setStats({
+        total: taskData.length,
+        done: done.length,
+        inProgress: count("in_progress"),
+        review: count("review"),
+        todo: count("todo"),
+        totalStoryPoints: points(taskData),
+        completedStoryPoints: points(done),
+      });
     } catch (err) {
       console.error(err);
     }
@@ -135,6 +146,23 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
 
   useEffect(() => {
     if (selectedSprintId) loadSprintDetails(selectedSprintId);
+  }, [selectedSprintId]);
+
+  // Keep the board current: a manager may add or approve tasks while this page is
+  // open, so reload the sprint every 15 seconds and when the tab is focused again.
+  useEffect(() => {
+    if (!selectedSprintId) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") loadSprintDetails(selectedSprintId);
+    };
+    const timer = window.setInterval(refresh, 15000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
   }, [selectedSprintId]);
 
   // Open the sprint that holds the task from the link (once per link).
@@ -598,7 +626,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                             <option value="">Unassigned</option>
                             {people.map((person) => (
                               <option key={person._id} value={person._id}>
-                                {person.name}
+                                {personLabel(person, user._id)}
                               </option>
                             ))}
                           </select>
@@ -613,11 +641,12 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
                                 Waiting for a tester to sign off
                               </p>
                             ) : task.status !== "review" && task.status !== "done" && !isAssignee(task) ? (
-                              <p className="scrum-card-final scrum-card-waiting">
-                                {task.assignee
-                                  ? `Only ${task.assignee.name ?? "the assignee"} can move this task`
-                                  : "Assign this task before moving it"}
-                              </p>
+                              // Someone else's task: no button and no explanation needed.
+                              task.assignee ? null : (
+                                <p className="scrum-card-final scrum-card-waiting">
+                                  Assign this task before moving it
+                                </p>
+                              )
                             ) : nextStatus(task.status) ? (
                               <button
                                 type="button"

@@ -2,7 +2,14 @@ import { useState } from "react";
 import { completeSprint, startSprint, updateSprint } from "../../api/sprints";
 import SprintStatusBadge from "./SprintStatusBadge";
 import { useAuth } from "../../auth/auth-context";
-import { canManageSprints, sprintLabel } from "../scrum/taskDisplay";
+import {
+  SPRINT_WEEK_OPTIONS,
+  canManageSprints,
+  endDateFor,
+  formatLongDate,
+  sprintLabel,
+  weeksBetween,
+} from "../scrum/taskDisplay";
 import "./SprintDetails.css";
 
 /** The sprint fields this component needs (works with App.tsx's Sprint type). */
@@ -48,7 +55,10 @@ export default function SprintDetails({
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
   const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // The sprint length in weeks. The end date is worked out from it, as when a sprint is created.
+  const [weeks, setWeeks] = useState(2);
+  // Until the start date or the weeks are changed, the saved end date is kept as it is.
+  const [datesTouched, setDatesTouched] = useState(false);
 
   // "Complete sprint" box: where unfinished tasks should go.
   const [completing, setCompleting] = useState(false);
@@ -121,17 +131,22 @@ export default function SprintDetails({
     setName(sprint.name);
     setGoal(sprint.goal ?? "");
     setStartDate(toDateInput(sprint.startDate));
-    setEndDate(toDateInput(sprint.endDate));
+    setWeeks(weeksBetween(toDateInput(sprint.startDate), toDateInput(sprint.endDate)));
+    setDatesTouched(false);
     setError("");
     setNotice("");
     setEditing(true);
   };
 
+  const editedEndDate =
+    datesTouched && startDate ? endDateFor(startDate, weeks) : toDateInput(sprint.endDate);
+
   const saveEdit = () => {
-    if (!name.trim() || !startDate || !endDate) {
-      setError("Name, start date and end date are required.");
+    if (!name.trim() || !startDate) {
+      setError("Name and start date are required.");
       return;
     }
+    const endDate = editedEndDate;
     if (endDate < startDate) {
       setError("End date must be on or after the start date.");
       return;
@@ -283,20 +298,35 @@ export default function SprintDetails({
                 id="sprint-edit-start"
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setDatesTouched(true);
+                }}
               />
             </div>
             <div>
-              <label htmlFor="sprint-edit-end">End date</label>
-              <input
-                id="sprint-edit-end"
-                type="date"
-                value={endDate}
-                min={startDate || undefined}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
+              <label htmlFor="sprint-edit-weeks">Sprint duration</label>
+              <select
+                id="sprint-edit-weeks"
+                value={weeks}
+                onChange={(e) => {
+                  setWeeks(Number(e.target.value));
+                  setDatesTouched(true);
+                }}
+              >
+                {SPRINT_WEEK_OPTIONS.map((w) => (
+                  <option key={w} value={w}>
+                    {w} {w === 1 ? "week" : "weeks"}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
+          {startDate && (
+            <p className="sprint-edit-range">
+              Runs {formatLongDate(startDate)} – {formatLongDate(editedEndDate)}
+            </p>
+          )}
 
           <div className="form-actions">
             <button type="button" className="secondary-button" onClick={() => setEditing(false)} disabled={busy}>

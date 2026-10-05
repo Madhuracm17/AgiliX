@@ -18,6 +18,7 @@ import ReportsPage from "./components/reports/ReportsPage";
 import ProjectCard from "./components/projects/ProjectCard";
 import ProjectSettings from "./components/projects/ProjectSettings";
 import ApprovalsPage from "./components/approvals/ApprovalsPage";
+import TeamRequests from "./components/team/TeamRequests";
 import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
 import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
 import { PROJECT_STATUS_LABELS, type ProjectStatus } from "./api/projects";
@@ -417,9 +418,15 @@ function ProjectsPage() {
     }
   }, [canCreateProjects]);
 
-  // People who can still be added: not the owner (you) and not already chosen.
+  // An admin adds a manager; a manager asks developers and testers to join (they
+  // join once they accept). Admins are never listed, and nobody is listed twice.
   const addableUsers = allUsers.filter(
-    (u) => u._id !== currentUser._id && !members.some((m) => m._id === u._id)
+    (u) =>
+      u._id !== currentUser._id &&
+      !members.some((m) => m._id === u._id) &&
+      (currentUser.role === "admin"
+        ? u.role === "manager"
+        : u.role === "developer" || u.role === "tester")
   );
 
   const addMember = () => {
@@ -513,13 +520,15 @@ function ProjectsPage() {
             onChange={(e) => setDescription(e.target.value)}
           />
 
-          <label>Team members</label>
+          <label>{currentUser.role === "admin" ? "Manager" : "Team members"}</label>
           <div className="member-invite">
             <select
               value={memberChoice}
               onChange={(e) => setMemberChoice(e.target.value)}
             >
-              <option value="">Select a person</option>
+              <option value="">
+                {currentUser.role === "admin" ? "Select a manager" : "Select a developer or tester"}
+              </option>
               {addableUsers.map((u) => (
                 <option key={u._id} value={u._id}>
                   {u.name} ({u.email})
@@ -535,6 +544,11 @@ function ProjectsPage() {
               Add
             </button>
           </div>
+          {currentUser.role === "manager" && (
+            <p className="member-hint">
+              Each person gets a team request and joins once they accept.
+            </p>
+          )}
           {members.length > 0 && (
             <div className="member-chips">
               {members.map((m) => (
@@ -741,7 +755,7 @@ function TeamPage() {
               </div>
 
               <div>
-                <h2>{user.name}</h2>
+                <h2>{user._id === currentUser._id ? `${user.name} (Myself)` : user.name}</h2>
                 <p>{user.email}</p>
                 <span className="role-badge">{user.role}</span>
                 {isAdmin && user._id !== currentUser._id && (
@@ -1058,9 +1072,9 @@ function ProjectOverviewPage() {
 }
 
 // Product Backlog (Scrum) — see components/scrum/ProductBacklogPage.tsx.
-// The time tracker stays here and is shown inside each opened backlog task.
+// Work in the backlog has not started, so an opened task has no timer.
 function BacklogPage() {
-  return <ProductBacklogPage renderTaskTools={(task) => <TaskTimer task={task} />} />;
+  return <ProductBacklogPage />;
 }
 
 // Scrum Board — see components/scrum/ScrumBoardPage.tsx.
@@ -1526,6 +1540,8 @@ function DashboardPage() {
   const canCreateProjects = currentUser.role === "admin" || currentUser.role === "manager";
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState("");
+  // Bumped after a team request is accepted, so the new project shows up.
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     fetch(`${API_URL}/projects`)
@@ -1540,17 +1556,27 @@ function DashboardPage() {
         }
         return response.json() as Promise<Project[]>;
       })
-      .then(setProjects)
+      .then((data) => {
+        setError("");
+        setProjects(data);
+      })
       .catch((err) =>
         setError(err instanceof Error ? err.message : "Could not load projects"),
       );
-  }, []);
+  }, [reload]);
+
+  // Requests from a manager to join a team appear as a popup, even when the
+  // person is not on any project yet.
+  const requests = <TeamRequests onChanged={() => setReload((n) => n + 1)} />;
 
   if (error) {
     return (
-      <div className="empty-state">
-        <h2>Unable to load dashboard</h2>
-        <p>{error}</p>
+      <div>
+        {requests}
+        <div className="empty-state">
+          <h2>Unable to load dashboard</h2>
+          <p>{error}</p>
+        </div>
       </div>
     );
   }
@@ -1563,22 +1589,30 @@ function DashboardPage() {
   }
   if (projects.length === 0) {
     return (
-      <div className="empty-state">
-        <h2>No projects yet</h2>
-        <p>
-          {canCreateProjects
-            ? "Create your first project to see your dashboard."
-            : "You are not on any project yet. Ask an admin or a manager to add you to one."}
-        </p>
-        {canCreateProjects && (
-          <button className="primary-button" onClick={() => navigate("/projects")}>
-            Go to Projects
-          </button>
-        )}
+      <div>
+        {requests}
+        <div className="empty-state">
+          <h2>No projects yet</h2>
+          <p>
+            {canCreateProjects
+              ? "Create your first project to see your dashboard."
+              : "You are not on any project yet. Ask an admin or a manager to add you to one."}
+          </p>
+          {canCreateProjects && (
+            <button className="primary-button" onClick={() => navigate("/projects")}>
+              Go to Projects
+            </button>
+          )}
+        </div>
       </div>
     );
   }
-  return <ProjectDashboard projects={projects} />;
+  return (
+    <div>
+      {requests}
+      <ProjectDashboard projects={projects} />
+    </div>
+  );
 }
 
 function App() {

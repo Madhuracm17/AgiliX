@@ -94,6 +94,9 @@ export interface MyReport {
     points: number;
     sprint: string | null;
     seconds: number;
+    /** A tester's tasks include the ones they review. */
+    kind?: "assigned" | "review" | "reviewed";
+    done?: boolean;
   }[];
   time: { totalSeconds: number };
 }

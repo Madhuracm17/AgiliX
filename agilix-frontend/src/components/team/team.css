@@ -23,6 +23,12 @@
   color: #d43f3f;
 }
 
+.member-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #6b6f62;
+}
+
 .member-chips {
   display: flex;
   flex-wrap: wrap;
@@ -94,4 +100,182 @@
   font: inherit;
   font-size: 13px;
   margin-top: 6px;
+}
+
+/* ---- Team page: equal-size cards ---- */
+
+.project-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.project-team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 140px;
+  background: #ffffff;
+  border: 1px solid #e6dfcd;
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.project-team-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.project-team-card .project-team-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-team-card h2 {
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.project-team-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #6b6f62;
+}
+
+.project-team-email {
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.project-team-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.role-badge-owner {
+  background: #f3ead0;
+  color: #8a6d1f;
+}
+
+.project-team-me {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6f7e61;
+}
+
+.project-team-remove {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+/* ---- Team requests (dashboard card, and waiting list on the Team page) ---- */
+
+.team-requests,
+.team-pending {
+  background: #ffffff;
+  border: 3px solid #e6dfcd;
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+
+.team-pending {
+  margin-top: 16px;
+}
+
+.team-requests h2,
+.team-pending h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.team-requests-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: #eef1ea;
+  color: #6f7e61;
+  font-size: 13px;
+}
+
+.team-requests-notice {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #6f7e61;
+}
+
+.team-request-row,
+.team-pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-top: 1px solid #efe9d8;
+}
+
+.team-request-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.team-request-info span {
+  color: #6b6f62;
+  font-size: 13px;
+}
+
+.team-request-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Team request popup ---- */
+
+.team-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(40, 42, 36, 0.45);
+}
+
+.team-popup {
+  width: 100%;
+  max-width: 460px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px 22px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
+}
+
+.team-popup h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.team-popup-sub {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #6b6f62;
+}
+
+.team-popup-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
