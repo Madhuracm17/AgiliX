@@ -109,7 +109,7 @@ export default function ApprovalsPage() {
                     title={
                       request.activeSprintName
                         ? `Add it to ${request.activeSprintName}`
-                        : "There is no active sprint right now"
+                        : "There is no sprint yet. Create one on the Scrum Board first."
                     }
                     onClick={() => decide(request, true, "sprint")}
                   >
@@ -137,7 +137,7 @@ export default function ApprovalsPage() {
                         title={
                           request.activeSprintName
                             ? `Move it into ${request.activeSprintName}`
-                            : "There is no active sprint right now"
+                            : "There is no sprint yet. Create one on the Scrum Board first."
                         }
                         onClick={() => decide(request, false, "sprint")}
                       >
@@ -157,6 +157,11 @@ export default function ApprovalsPage() {
                         : "Keep in sprint"}
                   </button>
                 </>
+              )}
+              {!request.activeSprintName && (
+                <span className="approval-hint">
+                  There is no sprint yet. Create one on the Scrum Board to use “current sprint”.
+                </span>
               )}
               <button
                 type="button"

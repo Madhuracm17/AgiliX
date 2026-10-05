@@ -44,10 +44,13 @@ export function formatHours(hours: number): string {
   return hours < 1 ? `${Math.round(hours * 60)}m` : `${Math.round(hours * 100) / 100}h`;
 }
 
+/**
+ * A top for the chart's scale that divides into four whole steps, so every grid
+ * line is a clean number (12 -> 0, 3, 6, 9, 12 rather than 0, 3.75, 7.5 ...).
+ */
 function niceMax(value: number): number {
-  if (value <= 5) return 5;
-  const step = value <= 20 ? 5 : value <= 50 ? 10 : 20;
-  return Math.ceil(value / step) * step;
+  const step = value <= 20 ? 4 : value <= 40 ? 8 : value <= 100 ? 20 : 40;
+  return Math.max(step, Math.ceil(value / step) * step);
 }
 
 function Legend({ items }: { items: { name: string; color: string; dashed?: boolean }[] }) {
@@ -211,15 +214,27 @@ export function BurnoutChart({ report }: { report: BurnoutReport }) {
   );
 }
 
-/** Committed against completed points for each finished sprint. */
-export function VelocityChart({ sprints }: { sprints: VelocityReport["sprints"] }) {
-  const max = niceMax(Math.max(0, ...sprints.flatMap((s) => [s.committed, s.completed])));
+/**
+ * Committed against completed points for each finished sprint. Every bar is
+ * labelled with its number, a dashed line marks the average of the last three
+ * sprints, and a small table below spells the same figures out.
+ */
+export function VelocityChart({
+  sprints,
+  average,
+}: {
+  sprints: VelocityReport["sprints"];
+  average?: number;
+}) {
+  const top = Math.max(0, average ?? 0, ...sprints.flatMap((s) => [s.committed, s.completed]));
+  const max = niceMax(top);
   const plotW = WIDTH - PAD.left - PAD.right;
   const plotH = HEIGHT - PAD.top - PAD.bottom;
   const group = plotW / Math.max(1, sprints.length);
-  const bar = Math.min(34, group / 3);
+  const bar = Math.min(56, group / 2.6);
   const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f * 10) / 10);
+  const showAverage = average !== undefined && average > 0 && sprints.length > 1;
 
   return (
     <div className="rpt-chart">
@@ -238,20 +253,59 @@ export function VelocityChart({ sprints }: { sprints: VelocityReport["sprints"] 
             <g key={s.sprintId}>
               <rect x={cx - bar - 2} y={y(s.committed)} width={bar} height={PAD.top + plotH - y(s.committed)} fill={MUTED} rx="3" />
               <rect x={cx + 2} y={y(s.completed)} width={bar} height={PAD.top + plotH - y(s.completed)} fill={ACCENT} rx="3" />
+              <text x={cx - bar / 2 - 2} y={y(s.committed) - 5} textAnchor="middle" fontSize="11" fontWeight="600" fill={AXIS}>
+                {s.committed}
+              </text>
+              <text x={cx + bar / 2 + 2} y={y(s.completed) - 5} textAnchor="middle" fontSize="11" fontWeight="600" fill={AXIS}>
+                {s.completed}
+              </text>
               <text x={cx} y={HEIGHT - PAD.bottom + 18} textAnchor="middle" fontSize="11" fill="#6b6f62">
-                {s.name.length > 12 ? `${s.name.slice(0, 11)}…` : s.name}
+                {s.name.length > 14 ? `${s.name.slice(0, 13)}…` : s.name}
               </text>
             </g>
           );
         })}
+        {showAverage && (
+          <line
+            x1={PAD.left}
+            x2={WIDTH - PAD.right}
+            y1={y(average as number)}
+            y2={y(average as number)}
+            stroke={GOOD}
+            strokeWidth="1.5"
+            strokeDasharray="5 4"
+          />
+        )}
         <AxisTitles xLabel="Sprint" yLabel="Story points" />
       </svg>
       <Legend
         items={[
-          { name: "Committed", color: MUTED },
-          { name: "Completed", color: ACCENT },
+          { name: "Planned (committed)", color: MUTED },
+          { name: "Finished (completed)", color: ACCENT },
+          ...(showAverage ? [{ name: `Average ${average} pts`, color: GOOD, dashed: true }] : []),
         ]}
       />
+
+      <table className="rpt-velocity-table">
+        <thead>
+          <tr>
+            <th>Sprint</th>
+            <th>Planned</th>
+            <th>Finished</th>
+            <th>Finished share</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sprints.map((s) => (
+            <tr key={s.sprintId}>
+              <td>{s.name}</td>
+              <td>{s.committed} pts</td>
+              <td>{s.completed} pts</td>
+              <td>{s.committed > 0 ? `${Math.round((s.completed / s.committed) * 100)}%` : "–"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { usePendingDeletes } from "../approvals/usePendingDeletes";
-import { useProjectPeople } from "../team/useProjectPeople";
+import { personLabel, useProjectPeople } from "../team/useProjectPeople";
 import { getSprints, type Sprint } from "../../api/sprints";
 import {
   TASK_TYPES,
@@ -14,12 +14,9 @@ import {
   isPendingApproval,
   updateTask,
   type Task,
-  type TaskPriority,
   type TaskType,
 } from "../../api/tasks";
-import type { StoryPointValue, TaskSuggestion } from "../../api/ai";
-import StoryPointEstimator from "../ai/StoryPointEstimator";
-import PriorityRecommender from "../ai/PriorityRecommender";
+import type { TaskSuggestion } from "../../api/ai";
 import TaskSuggestions from "../ai/TaskSuggestions";
 import {
   canEditTaskPlan,
@@ -31,11 +28,6 @@ import {
   typeLabel,
 } from "./taskDisplay";
 import "./scrum.css";
-
-interface ProductBacklogPageProps {
-  /** Extra per-task tools shown when a backlog row is opened (App.tsx passes the time tracker). */
-  renderTaskTools?: (task: Task) => ReactNode;
-}
 
 type AddMode = "ai" | null;
 
@@ -68,9 +60,9 @@ function formatDate(date: string): string {
  * here, in one of two ways: AI suggestions (each one can be added to a
  * sprint or to the backlog) or the user's own New Task form. Below that:
  * every sprint with its tasks (active, planned, completed) and the backlog. Opening a backlog row shows
- * the AI priority / story-point helpers and "Add to sprint".
+ * its type, assignee and "Add to sprint".
  */
-export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPageProps) {
+export default function ProductBacklogPage() {
   const { projectId } = useParams();
   const { user } = useAuth();
   // Changing a task's priority after it exists is for managers and admins.
@@ -148,18 +140,6 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
     setBacklog((prev) =>
       prev.map((t) => (t._id === taskId ? { ...t, ...changes } : t))
     );
-
-  // Saves story points. Called only from the explicit "Apply Estimate" button.
-  const applyStoryPoints = async (taskId: string, points: StoryPointValue) => {
-    await updateTask(taskId, { storyPoints: points });
-    patchLocal(taskId, { storyPoints: points });
-  };
-
-  // Saves the priority. Called only from the explicit "Apply Recommendation" button.
-  const applyPriority = async (taskId: string, priority: TaskPriority) => {
-    await updateTask(taskId, { priority });
-    patchLocal(taskId, { priority });
-  };
 
   // Admins and managers assign a task to a team member (or clear it).
   const changeAssignee = async (taskId: string, personId: string) => {
@@ -575,7 +555,7 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                                           <option value="">Unassigned</option>
                                           {people.map((person) => (
                                             <option key={person._id} value={person._id}>
-                                              {person.name}
+                                              {personLabel(person, user._id)}
                                             </option>
                                           ))}
                                         </select>
@@ -608,33 +588,6 @@ export default function ProductBacklogPage({ renderTaskTools }: ProductBacklogPa
                                       </label>
                                     )}
                                   </div>
-
-                                  {canEditPlan && (
-                                    <PriorityRecommender
-                                      projectId={projectId}
-                                      taskId={task._id}
-                                      title={task.title}
-                                      description={task.description}
-                                      currentPriority={task.priority}
-                                      applyLabel="Apply Recommendation"
-                                      appliedText={(value) => `Priority set to ${value}.`}
-                                      onApply={(value) => applyPriority(task._id, value)}
-                                    />
-                                  )}
-
-                                  <StoryPointEstimator
-                                    projectId={projectId}
-                                    taskId={task._id}
-                                    title={task.title}
-                                    description={task.description}
-                                    priority={task.priority}
-                                    savedStoryPoints={task.storyPoints ?? 0}
-                                    applyLabel="Apply Estimate"
-                                    appliedText={(points) => `Saved ${points} story points.`}
-                                    onApply={(points) => applyStoryPoints(task._id, points)}
-                                  />
-
-                                  {renderTaskTools?.(task)}
 
                                   <div className="task-delete-row">
                                     {canEditPlan || task.status === "todo" ? (

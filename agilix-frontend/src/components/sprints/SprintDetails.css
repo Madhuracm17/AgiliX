@@ -122,8 +122,10 @@
 }
 
 .sprint-edit-form input,
+.sprint-edit-form select,
 .sprint-edit-form textarea {
   width: 100%;
+  background: #ffffff;
   border: 1px solid #ddd5c0;
   border-radius: 8px;
   padding: 10px 12px;
@@ -133,6 +135,7 @@
 }
 
 .sprint-edit-form input:focus,
+.sprint-edit-form select:focus,
 .sprint-edit-form textarea:focus {
   border-color: #829172;
 }
@@ -140,6 +143,12 @@
 .sprint-edit-form textarea {
   min-height: 70px;
   resize: vertical;
+}
+
+.sprint-edit-range {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #6b6f62;
 }
 
 .sprint-edit-dates {

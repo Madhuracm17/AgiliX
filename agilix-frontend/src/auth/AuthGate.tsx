@@ -6,6 +6,15 @@ import LoginPage from "./LoginPage";
 import { clearToken, getToken, onSessionExpired, saveToken } from "./session";
 import "./auth.css";
 
+/** Whoever logs in lands on the dashboard, not on the page the last person was on. */
+function goToDashboard() {
+  try {
+    window.history.replaceState(null, "", "/dashboard");
+  } catch {
+    // Not allowed in some embedded views; the app then opens where it was.
+  }
+}
+
 type Status = "checking" | "logged-out" | "logged-in" | "offline";
 
 /**
@@ -49,6 +58,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   useEffect(
     () =>
       onSessionExpired(() => {
+        goToDashboard();
         setUser(null);
         setStatus("logged-out");
       }),
@@ -57,12 +67,14 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
   const handleLoggedIn = useCallback((token: string, loggedInUser: User) => {
     saveToken(token);
+    goToDashboard();
     setUser(loggedInUser);
     setStatus("logged-in");
   }, []);
 
   const logout = useCallback(() => {
     clearToken();
+    goToDashboard();
     setUser(null);
     setStatus("logged-out");
   }, []);

@@ -230,3 +230,30 @@
 .project-info-card > div:has(.stat-icon) {
   padding-right: 72px;
 }
+
+/* Velocity: the figures behind the chart. */
+.rpt-velocity-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.rpt-velocity-table th,
+.rpt-velocity-table td {
+  padding: 7px 8px;
+  text-align: left;
+  border-top: 1px solid #efe9d8;
+}
+
+.rpt-velocity-table th {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b6f62;
+  border-top: 0;
+}
+
+.rpt-task-kind {
+  color: #6f7e61;
+  font-size: 12px;
+}

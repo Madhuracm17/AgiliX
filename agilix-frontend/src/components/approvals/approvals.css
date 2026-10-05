@@ -38,6 +38,8 @@
 
 .approval-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   flex-shrink: 0;
 }
@@ -91,4 +93,10 @@
   font-size: 13px;
   cursor: pointer;
   text-decoration: underline;
+}
+
+.approval-hint {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #8a6d3b;
 }

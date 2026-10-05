@@ -182,7 +182,7 @@ export default function ReportsPage() {
         (isTeamView ? (
           <TeamReports projectId={projectId} isScrum={isScrum} />
         ) : (
-          <MyReports projectId={projectId} />
+          <MyReports projectId={projectId} isTester={user.role === "tester"} />
         ))}
     </div>
   );
@@ -521,7 +521,7 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
               </div>
             </div>
             {velocity && velocity.sprints.length > 0 ? (
-              <VelocityChart sprints={velocity.sprints} />
+              <VelocityChart sprints={velocity.sprints} average={velocity.averageVelocity} />
             ) : (
               <p className="rpt-empty">Complete a sprint to start building velocity.</p>
             )}
@@ -571,7 +571,7 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
 
 /* ---------------------------- developer / tester ---------------------------- */
 
-function MyReports({ projectId }: { projectId: string }) {
+function MyReports({ projectId, isTester }: { projectId: string; isTester: boolean }) {
   const [report, setReport] = useState<MyReport | null>(null);
   const [error, setError] = useState("");
 
@@ -610,16 +610,18 @@ function MyReports({ projectId }: { projectId: string }) {
           <StatIcon kind="person" />
           <span className="eyebrow">MY TASKS</span>
           <h3>{totals.tasks}</h3>
+          {isTester && <p>assigned to me + to review</p>}
         </div>
         <div>
           <StatIcon kind="chart" />
-          <span className="eyebrow">IN PROGRESS</span>
+          <span className="eyebrow">{isTester ? "TO REVIEW / IN PROGRESS" : "IN PROGRESS"}</span>
           <h3>{totals.inProgress}</h3>
         </div>
         <div>
           <StatIcon kind="check" />
           <span className="eyebrow">COMPLETED</span>
           <h3>{totals.done}</h3>
+          {isTester && <p>incl. tasks I approved or sent back</p>}
         </div>
         <div>
           <StatIcon kind="clock" />
@@ -654,6 +656,46 @@ function MyReports({ projectId }: { projectId: string }) {
             completedStoryPoints={progress.donePoints}
             inProgressStoryPoints={0}
           />
+        )}
+      </section>
+
+      <section className="rpt-section">
+        <h2>{isTester ? "My tasks and reviews" : "My tasks"}</h2>
+        {report.tasks.length === 0 ? (
+          <p className="rpt-empty">
+            {isTester
+              ? "Nothing here yet. Tasks you are assigned, and tasks waiting for your review, appear here."
+              : "No tasks are assigned to you yet."}
+          </p>
+        ) : (
+          <table className="rpt-velocity-table">
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Status</th>
+                <th>Points</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.tasks.map((t) => (
+                <tr key={t.id}>
+                  <td>
+                    {t.title}
+                    {isTester && t.kind === "review" && (
+                      <span className="rpt-task-kind"> · waiting for my review</span>
+                    )}
+                    {isTester && t.kind === "reviewed" && (
+                      <span className="rpt-task-kind"> · reviewed by me</span>
+                    )}
+                  </td>
+                  <td>{STATUS_LABEL[t.status] ?? t.status}</td>
+                  <td>{t.points}</td>
+                  <td>{formatTime(t.seconds)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
     </>
