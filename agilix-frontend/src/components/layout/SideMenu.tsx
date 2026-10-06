@@ -33,7 +33,7 @@ function saveLastProject(storageKey: string, projectId: string) {
 /**
  * The menu that slides in from the left when the three-line button in the top bar
  * is pressed (like the Gmail menu): Dashboard, Scrum Board, Team Members and
- * All Projects, with every project listed under All Projects.
+ * All Projects (admins get only Team Members and All Projects), with every project listed under All Projects.
  *
  * Scrum Board opens the board of the project the person looked at last (or the
  * first project if they have not opened one yet).
@@ -42,6 +42,7 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const isAdmin = user.role === "admin";
   const storageKey = `agilix.lastProject.${user._id}`;
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -127,22 +128,26 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
         </div>
 
         <nav className="side-menu-nav">
-          <NavLink
-            to="/dashboard"
-            tabIndex={open ? 0 : -1}
-            className={({ isActive }) => `side-menu-link ${isActive ? "active" : ""}`}
-          >
-            Dashboard
-          </NavLink>
+          {!isAdmin && (
+            <>
+              <NavLink
+                to="/dashboard"
+                tabIndex={open ? 0 : -1}
+                className={({ isActive }) => `side-menu-link ${isActive ? "active" : ""}`}
+              >
+                Dashboard
+              </NavLink>
 
-          <button
-            type="button"
-            tabIndex={open ? 0 : -1}
-            className={`side-menu-link ${onBoard ? "active" : ""}`}
-            onClick={openBoard}
-          >
-            Scrum Board
-          </button>
+              <button
+                type="button"
+                tabIndex={open ? 0 : -1}
+                className={`side-menu-link ${onBoard ? "active" : ""}`}
+                onClick={openBoard}
+              >
+                Scrum Board
+              </button>
+            </>
+          )}
 
           <NavLink
             to="/team"
@@ -152,54 +157,56 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
             Team Members
           </NavLink>
 
-          <div className="side-menu-group">
-            <div className="side-menu-group-row">
-              <NavLink
-                to="/projects"
-                end
-                tabIndex={open ? 0 : -1}
-                className={({ isActive }) => `side-menu-link ${isActive ? "active" : ""}`}
-              >
-                All Projects
-              </NavLink>
-              <button
-                type="button"
-                tabIndex={open ? 0 : -1}
-                className="side-menu-toggle"
-                aria-label={projectsOpen ? "Hide the project list" : "Show the project list"}
-                aria-expanded={projectsOpen}
-                onClick={() => setProjectsOpen((value) => !value)}
-              >
-                {projectsOpen ? "▴" : "▾"}
-              </button>
-            </div>
+          {!isAdmin && (
+            <div className="side-menu-group">
+              <div className="side-menu-group-row">
+                <NavLink
+                  to="/projects"
+                  end
+                  tabIndex={open ? 0 : -1}
+                  className={({ isActive }) => `side-menu-link ${isActive ? "active" : ""}`}
+                >
+                  All Projects
+                </NavLink>
+                <button
+                  type="button"
+                  tabIndex={open ? 0 : -1}
+                  className="side-menu-toggle"
+                  aria-label={projectsOpen ? "Hide the project list" : "Show the project list"}
+                  aria-expanded={projectsOpen}
+                  onClick={() => setProjectsOpen((value) => !value)}
+                >
+                  {projectsOpen ? "▴" : "▾"}
+                </button>
+              </div>
 
-            {projectsOpen && (
-              <ul className="side-menu-projects">
-                {!loaded && <li className="side-menu-note">Loading projects…</li>}
-                {loaded && failed && (
-                  <li className="side-menu-note">We could not load your projects.</li>
-                )}
-                {loaded && !failed && projects.length === 0 && (
-                  <li className="side-menu-note">No projects yet.</li>
-                )}
-                {projects.map((project) => (
-                  <li key={project._id}>
-                    <NavLink
-                      to={`/projects/${project._id}`}
-                      tabIndex={open ? 0 : -1}
-                      title={project.name}
-                      className={({ isActive }) =>
-                        `side-menu-project ${isActive ? "active" : ""}`
-                      }
-                    >
-                      {project.name}
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+              {projectsOpen && (
+                <ul className="side-menu-projects">
+                  {!loaded && <li className="side-menu-note">Loading projects…</li>}
+                  {loaded && failed && (
+                    <li className="side-menu-note">We could not load your projects.</li>
+                  )}
+                  {loaded && !failed && projects.length === 0 && (
+                    <li className="side-menu-note">No projects yet.</li>
+                  )}
+                  {projects.map((project) => (
+                    <li key={project._id}>
+                      <NavLink
+                        to={`/projects/${project._id}`}
+                        tabIndex={open ? 0 : -1}
+                        title={project.name}
+                        className={({ isActive }) =>
+                          `side-menu-project ${isActive ? "active" : ""}`
+                        }
+                      >
+                        {project.name}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </nav>
 
         <div className="side-menu-foot">

@@ -107,6 +107,22 @@ export class TeamInvitesService {
       .exec();
   }
 
+  /**
+   * Who asked each person who joined (accepted requests), for the admin's view of
+   * "this manager's team" and for the manager's name on each team card. Anyone on
+   * the project can see it.
+   */
+  async listAccepted(user: AuthUser, projectId: string) {
+    await this.access.assertProject(user, projectId);
+    const rows = (await this.inviteModel
+      .find({ project: projectId, status: InviteStatus.ACCEPTED })
+      .sort({ decidedAt: 1 })
+      .select('invitee invitedBy')
+      .lean()
+      .exec()) as unknown as Array<{ invitee?: unknown; invitedBy?: unknown }>;
+    return rows.map((r) => ({ invitee: String(r.invitee), invitedBy: String(r.invitedBy) }));
+  }
+
   /** The requests waiting for this person, with the project and who sent them. */
   async listMine(user: AuthUser) {
     return this.inviteModel

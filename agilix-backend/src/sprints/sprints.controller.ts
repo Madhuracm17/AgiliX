@@ -9,7 +9,7 @@ import { AccessService } from '../auth/access.service';
 import { requireRole } from '../auth/roles';
 import { UserRole } from '../users/schemas/user.schema';
 
-const SPRINT_MESSAGE = 'You do not have permission to manage sprints. Please contact a manager or an admin.';
+const SPRINT_MESSAGE = 'You do not have permission to manage sprints. Only a manager can create, edit, start or complete sprints.';
 
 @Controller('sprints')
 export class SprintsController {
@@ -20,7 +20,7 @@ export class SprintsController {
 
   @Post()
   async create(@Body() dto: CreateSprintDto, @CurrentUser() user: AuthUser) {
-    requireRole(user, SPRINT_MESSAGE, UserRole.ADMIN, UserRole.MANAGER);
+    requireRole(user, SPRINT_MESSAGE, UserRole.MANAGER);
     await this.access.assertProject(user, dto.project);
     return this.sprintsService.create(dto);
   }
@@ -40,7 +40,7 @@ export class SprintsController {
   /** Edit name, goal or dates (not allowed once completed). */
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateSprintDto, @CurrentUser() user: AuthUser) {
-    requireRole(user, SPRINT_MESSAGE, UserRole.ADMIN, UserRole.MANAGER);
+    requireRole(user, SPRINT_MESSAGE, UserRole.MANAGER);
     await this.access.assertSprint(user, id);
     return this.sprintsService.update(id, dto);
   }
@@ -48,7 +48,7 @@ export class SprintsController {
   /** planned → active (only one active sprint per project). */
   @Patch(':id/start')
   async start(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    requireRole(user, SPRINT_MESSAGE, UserRole.ADMIN, UserRole.MANAGER);
+    requireRole(user, SPRINT_MESSAGE, UserRole.MANAGER);
     await this.access.assertSprint(user, id);
     return this.sprintsService.start(id);
   }
@@ -59,7 +59,7 @@ export class SprintsController {
    */
   @Patch(':id/complete')
   async complete(@Param('id') id: string, @Body() dto: CompleteSprintDto, @CurrentUser() user: AuthUser) {
-    requireRole(user, SPRINT_MESSAGE, UserRole.ADMIN, UserRole.MANAGER);
+    requireRole(user, SPRINT_MESSAGE, UserRole.MANAGER);
     await this.access.assertSprint(user, id);
     return this.sprintsService.complete(id, dto);
   }

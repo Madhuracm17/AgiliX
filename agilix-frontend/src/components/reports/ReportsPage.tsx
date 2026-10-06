@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../../api/client";
-import { getProject, type Project } from "../../api/projects";
+import { getProject, getProjects, type Project } from "../../api/projects";
 import { getSprints, type Sprint } from "../../api/sprints";
 import {
   getBurndown,
@@ -18,6 +18,7 @@ import {
 import { useAuth } from "../../auth/auth-context";
 import SprintProgress from "../sprints/SprintProgress";
 import { readError } from "../scrum/taskDisplay";
+import { projectPeople } from "../team/managerTeam";
 import { BurndownChart, BurnoutChart, formatHours, VelocityChart } from "./ReportCharts";
 import "./reports.css";
 
@@ -113,14 +114,21 @@ function formatTime(totalSeconds: number): string {
 }
 
 /**
- * Reports for one project. Managers and admins see the team reports;
+ * Reports for one project. Managers and admins (read only) see the team reports;
  * everyone else sees their own work, sprint progress and time.
  */
 export default function ReportsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isTeamView = user.role === "manager";
+  const isAdmin = user.role === "admin";
+  const isTeamView = user.role === "manager" || isAdmin;
+  // An admin opened one developer's or tester's report (read only).
+  const [searchParams] = useSearchParams();
+  const viewedId = isAdmin ? searchParams.get("user") : null;
+  // The manager whose team the admin came from, so the project picker lists that manager's projects.
+  const managerId = isAdmin ? searchParams.get("manager") : null;
+  const [pickable, setPickable] = useState<Project[]>([]);
 
   const [project, setProject] = useState<Project | null>(null);
   // The view waits for the project to load, so the reports are fetched once
@@ -135,6 +143,31 @@ export default function ReportsPage() {
       .finally(() => setProjectLoaded(true));
   }, [projectId]);
 
+  // For admins: the projects they can switch between on this page.
+  useEffect(() => {
+    if (!isAdmin) return;
+    getProjects()
+      .then((all) =>
+        setPickable(
+          all.filter(
+            (p) =>
+              (!managerId || projectPeople(p).some((x) => x._id === managerId)) &&
+              (!viewedId || projectPeople(p).some((x) => x._id === viewedId)),
+          ),
+        ),
+      )
+      .catch(() => setPickable([]));
+  }, [isAdmin, managerId, viewedId]);
+
+  const switchProject = (id: string) => {
+    const query = new URLSearchParams();
+    if (managerId) query.set("manager", managerId);
+    if (viewedId) query.set("user", viewedId);
+    const qs = query.toString();
+    navigate(`/projects/${id}/reports${qs ? `?${qs}` : ""}`);
+  };
+
+  const viewedPerson = viewedId && project ? projectPeople(project).find((p) => p._id === viewedId) ?? null : null;
   const isScrum = !!project && (project.methodology || "scrum") !== "kanban";
   // Only a project that has loaded as Kanban goes back to the Kanban board.
   const isKanban = !!project && project.methodology === "kanban";
@@ -145,21 +178,44 @@ export default function ReportsPage() {
         <div>
           <p
             className="eyebrow breadcrumb-link"
-            onClick={() => navigate(`/projects/${projectId}/${isKanban ? "kanban" : "sprints"}`)}
+            onClick={() =>
+              navigate(
+                isAdmin
+                  ? `/team${managerId ? `?manager=${managerId}` : ""}`
+                  : `/projects/${projectId}/${isKanban ? "kanban" : "sprints"}`,
+              )
+            }
           >
-            ← {isKanban ? "Kanban Board" : "Scrum Board"}
+            {isAdmin ? "← Team Members" : `← ${isKanban ? "Kanban Board" : "Scrum Board"}`}
           </p>
-          <h1>Reports</h1>
+          <h1>{viewedId ? `Report of ${viewedPerson?.name ?? "team member"}` : "Reports"}</h1>
           <p className="page-description">
-            {user.role === "admin"
-              ? "Reports are for managers, developers and testers."
+            {viewedId
+              ? `Tasks, sprint progress and tracked time${project ? ` on ${project.name}` : ""}.`
               : isTeamView
-                ? "Sprint progress, velocity and team workload for this project."
+                ? `Sprint progress, velocity and team workload${project ? ` for ${project.name}` : " for this project"}.`
                 : "Your tasks, sprint progress and tracked time on this project."}
           </p>
         </div>
 
-        {isScrum && (
+        {isAdmin && pickable.length > 0 && (
+          <div className="rpt-project-picker">
+            <label htmlFor="rpt-project">Project</label>
+            <select
+              id="rpt-project"
+              value={projectId ?? ""}
+              onChange={(e) => switchProject(e.target.value)}
+            >
+              {pickable.map((p) => (
+                <option key={p._id} value={p._id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {isScrum && !isAdmin && (
           <button
             className="secondary-button"
             onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
@@ -169,17 +225,16 @@ export default function ReportsPage() {
         )}
       </div>
 
-      {user.role === "admin" && (
-        <div className="empty-state">
-          <h2>Reports are not available for admins</h2>
-          <p>Reports are shown to managers, developers and testers.</p>
-        </div>
-      )}
-
       {projectId &&
         projectLoaded &&
-        user.role !== "admin" &&
-        (isTeamView ? (
+        (viewedId ? (
+          <MyReports
+            projectId={projectId}
+            isTester={viewedPerson?.role === "tester"}
+            userId={viewedId}
+            ownerName={viewedPerson?.name ?? "This person"}
+          />
+        ) : isTeamView ? (
           <TeamReports projectId={projectId} isScrum={isScrum} />
         ) : (
           <MyReports projectId={projectId} isTester={user.role === "tester"} />
@@ -571,19 +626,31 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
 
 /* ---------------------------- developer / tester ---------------------------- */
 
-function MyReports({ projectId, isTester }: { projectId: string; isTester: boolean }) {
+function MyReports({
+  projectId,
+  isTester,
+  userId,
+  ownerName,
+}: {
+  projectId: string;
+  isTester: boolean;
+  /** Set when an admin looks at someone else's report. */
+  userId?: string;
+  ownerName?: string;
+}) {
+  const viewing = !!ownerName;
   const [report, setReport] = useState<MyReport | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    getMyReport(projectId)
+    getMyReport(projectId, userId)
       .then((data) => !cancelled && setReport(data))
       .catch((err) => !cancelled && setError(readError(err, "Failed to load your report")));
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, userId]);
 
   if (error) {
     return (
@@ -608,9 +675,9 @@ function MyReports({ projectId, isTester }: { projectId: string; isTester: boole
       <div className="project-info-card">
         <div>
           <StatIcon kind="person" />
-          <span className="eyebrow">MY TASKS</span>
+          <span className="eyebrow">{viewing ? "TASKS" : "MY TASKS"}</span>
           <h3>{totals.tasks}</h3>
-          {isTester && <p>assigned to me + to review</p>}
+          {isTester && <p>{viewing ? "assigned + to review" : "assigned to me + to review"}</p>}
         </div>
         <div>
           <StatIcon kind="chart" />
@@ -621,7 +688,7 @@ function MyReports({ projectId, isTester }: { projectId: string; isTester: boole
           <StatIcon kind="check" />
           <span className="eyebrow">COMPLETED</span>
           <h3>{totals.done}</h3>
-          {isTester && <p>incl. tasks I approved or sent back</p>}
+          {isTester && <p>{viewing ? "incl. tasks approved or sent back" : "incl. tasks I approved or sent back"}</p>}
         </div>
         <div>
           <StatIcon kind="clock" />
@@ -633,7 +700,7 @@ function MyReports({ projectId, isTester }: { projectId: string; isTester: boole
       <section className="rpt-section">
         <div className="rpt-section-head">
           <div>
-            <h2>My sprint progress</h2>
+            <h2>{viewing ? "Sprint progress" : "My sprint progress"}</h2>
             {activeSprint && (
               <p className="rpt-sub">
                 {activeSprint.name}
@@ -646,7 +713,7 @@ function MyReports({ projectId, isTester }: { projectId: string; isTester: boole
         {!activeSprint ? (
           <p className="rpt-empty">There is no active sprint right now.</p>
         ) : progress.assignedTasks === 0 ? (
-          <p className="rpt-empty">You have no tasks in the active sprint.</p>
+          <p className="rpt-empty">{viewing ? `${ownerName} has no tasks in the active sprint.` : "You have no tasks in the active sprint."}</p>
         ) : (
           <SprintProgress
             totalTasks={progress.assignedTasks}
@@ -660,7 +727,7 @@ function MyReports({ projectId, isTester }: { projectId: string; isTester: boole
       </section>
 
       <section className="rpt-section">
-        <h2>{isTester ? "My tasks and reviews" : "My tasks"}</h2>
+        <h2>{viewing ? (isTester ? "Tasks and reviews" : "Tasks") : isTester ? "My tasks and reviews" : "My tasks"}</h2>
         {report.tasks.length === 0 ? (
           <p className="rpt-empty">
             {isTester
@@ -684,10 +751,10 @@ function MyReports({ projectId, isTester }: { projectId: string; isTester: boole
                   <td>
                     {t.title}
                     {isTester && t.kind === "review" && (
-                      <span className="rpt-task-kind"> · waiting for my review</span>
+                      <span className="rpt-task-kind"> · {viewing ? "waiting for review" : "waiting for my review"}</span>
                     )}
                     {isTester && t.kind === "reviewed" && (
-                      <span className="rpt-task-kind"> · reviewed by me</span>
+                      <span className="rpt-task-kind"> · {viewing ? "reviewed" : "reviewed by me"}</span>
                     )}
                   </td>
                   <td>{t.sprint ?? "Backlog"}</td>

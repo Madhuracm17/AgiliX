@@ -19,7 +19,7 @@ export class AnalyticsController {
   @Header('Cache-Control', 'no-store')
   @Get('summary/:projectId')
   async getSummary(@Param('projectId') projectId: string, @CurrentUser() user: AuthUser) {
-    requireRole(user, TEAM_REPORTS_MESSAGE, UserRole.MANAGER);
+    requireRole(user, TEAM_REPORTS_MESSAGE, UserRole.MANAGER, UserRole.ADMIN);
     await this.access.assertProject(user, projectId);
     return this.analyticsService.getProjectSummary(projectId);
   }
@@ -27,7 +27,7 @@ export class AnalyticsController {
   @Header('Cache-Control', 'no-store')
   @Get('workload/:projectId')
   async getWorkload(@Param('projectId') projectId: string, @CurrentUser() user: AuthUser) {
-    requireRole(user, TEAM_REPORTS_MESSAGE, UserRole.MANAGER);
+    requireRole(user, TEAM_REPORTS_MESSAGE, UserRole.MANAGER, UserRole.ADMIN);
     await this.access.assertProject(user, projectId);
     return this.analyticsService.getWorkload(projectId);
   }

@@ -16,6 +16,15 @@ export interface ProjectInvite {
   createdAt: string;
 }
 
+/** Who asked each person who joined a project: person id -> manager id. */
+export interface JoinedInvite {
+  invitee: string;
+  invitedBy: string;
+}
+
+export const getJoinedInvites = (projectId: string) =>
+  api<JoinedInvite[]>(`/team-invites/accepted?project=${projectId}`);
+
 export const getMyInvites = () => api<MyInvite[]>("/team-invites/mine");
 
 export const getProjectInvites = (projectId: string) =>

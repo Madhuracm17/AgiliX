@@ -25,6 +25,13 @@ export class TeamInvitesController {
     return this.invites.listForProject(user, project);
   }
 
+  /** Who asked each person who joined a project (for the admin's manager view). */
+  @Header('Cache-Control', 'no-store')
+  @Get('accepted')
+  accepted(@Query('project') project: string, @CurrentUser() user: AuthUser) {
+    return this.invites.listAccepted(user, project);
+  }
+
   /** The requests waiting for the logged-in person. */
   @Header('Cache-Control', 'no-store')
   @Get('mine')

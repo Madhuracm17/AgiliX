@@ -257,3 +257,25 @@
   color: #6f7e61;
   font-size: 12px;
 }
+
+/* Admin: switch between a manager's projects on the reports page */
+.rpt-project-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rpt-project-picker label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a4f46;
+}
+
+.rpt-project-picker select {
+  border: 1px solid #ddd5c0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  background: #ffffff;
+}

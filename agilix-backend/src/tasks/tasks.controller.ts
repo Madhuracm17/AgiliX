@@ -20,6 +20,7 @@ import { requireRole } from '../auth/roles';
 import { UserRole } from '../users/schemas/user.schema';
 import { ApprovalsService } from '../approvals/approvals.service';
 
+const ADMIN_MESSAGE = 'Admins can view projects and reports only. Tasks are managed by managers, developers and testers.';
 const SPRINT_ADD_MESSAGE =
   'This task is assigned to someone else, so only they or a manager can add it to a sprint.';
 const SPRINT_REMOVE_MESSAGE =
@@ -35,6 +36,7 @@ export class TasksController {
 
   @Post()
   async create(@Body() dto: CreateTaskDto, @CurrentUser() user: AuthUser) {
+    this.forbidAdmin(user);
     await this.access.assertProject(user, dto.project);
 
     // Admins and managers can assign a task to any team member. Developers and
@@ -60,6 +62,7 @@ export class TasksController {
    */
   @Delete(':id')
   async remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    this.forbidAdmin(user);
     const { projectId } = await this.access.assertTask(user, id);
     if (user.role === UserRole.ADMIN || user.role === UserRole.MANAGER) {
       return this.tasksService.remove(id);
@@ -93,6 +96,7 @@ export class TasksController {
 
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateTaskDto, @CurrentUser() user: AuthUser) {
+    this.forbidAdmin(user);
     const { projectId, assignee } = await this.access.assertTask(user, id);
 
     // Changing who a task is assigned to or how important it is belongs to managers and admins.
@@ -128,11 +132,16 @@ export class TasksController {
     @Param('sprintId') sprintId: string,
     @CurrentUser() user: AuthUser,
   ) {
+    this.forbidAdmin(user);
     const { assignee } = await this.access.assertTask(user, id);
     await this.access.assertSprint(user, sprintId);
     const isPlanner = user.role === UserRole.ADMIN || user.role === UserRole.MANAGER;
     if (!isPlanner) this.requireOwnTask(user, assignee, SPRINT_ADD_MESSAGE);
     return this.tasksService.assignToSprint(id, sprintId);
+  }
+
+  private forbidAdmin(user: AuthUser): void {
+    if (user.role === UserRole.ADMIN) throw new ForbiddenException(ADMIN_MESSAGE);
   }
 
   private requireOwnTask(user: AuthUser, assignee: string | null, message: string): void {

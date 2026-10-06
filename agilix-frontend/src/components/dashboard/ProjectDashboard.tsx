@@ -43,6 +43,8 @@ interface Activity {
 export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  // Admins only oversee accounts and projects, so they get no sprint-risk estimate.
+  const isAdmin = user.role === "admin";
   const projectKey = projects.map((p) => p._id).join(",");
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -221,7 +223,7 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
             {!activeSprint ? (
               <div className="dash-empty">
                 <p>No active sprint right now.</p>
-                {(user.role === "admin" || user.role === "manager") && (
+                {user.role === "manager" && (
                   <button className="secondary-button" onClick={() => navigate("/projects")}>
                     Open All Projects
                   </button>
@@ -254,26 +256,28 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                     value={sprintTasks.length - sprintDone.length}
                   />
                   <StatTile label="Days Left" value={daysLeft(activeSprint.endDate)} />
-                  <div className="dash-stat">
-                    <span>Expected Completion</span>
-                    {risk ? (
-                      <strong className={`dash-risk dash-risk-${risk.risk}`}>
-                        {risk.completionForecastPercent}%
-                      </strong>
-                    ) : (
-                      <button
-                        type="button"
-                        className="dash-link dash-check"
-                        onClick={checkConfidence}
-                        disabled={checkingRisk}
-                      >
-                        {checkingRisk ? "Checking…" : "View Estimate"}
-                      </button>
-                    )}
-                  </div>
+                  {!isAdmin && (
+                    <div className="dash-stat">
+                      <span>Expected Completion</span>
+                      {risk ? (
+                        <strong className={`dash-risk dash-risk-${risk.risk}`}>
+                          {risk.completionForecastPercent}%
+                        </strong>
+                      ) : (
+                        <button
+                          type="button"
+                          className="dash-link dash-check"
+                          onClick={checkConfidence}
+                          disabled={checkingRisk}
+                        >
+                          {checkingRisk ? "Checking…" : "View Estimate"}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {risk && (
+                {!isAdmin && risk && (
                   <p className="dash-muted dash-ai-line">
                     <span className="dash-ai-text" title={risk.reasoning}>
                       <strong>AI estimate:</strong> {firstSentence(risk.reasoning)}
@@ -288,7 +292,7 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                     </button>
                   </p>
                 )}
-                {riskError && (
+                {!isAdmin && riskError && (
                   <p className="dash-error" role="alert">
                     {riskError}
                   </p>

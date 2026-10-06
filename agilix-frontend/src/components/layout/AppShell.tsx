@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link, Outlet } from "react-router-dom";
+import { useAuth } from "../../auth/auth-context";
 import ProfileMenu from "./ProfileMenu";
 import SideMenu from "./SideMenu";
 import NotificationBell from "../notifications/NotificationBell";
@@ -11,6 +12,7 @@ import "./shell.css";
  * profile menu.
  */
 export default function AppShell() {
+  const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
@@ -49,7 +51,8 @@ export default function AppShell() {
           </div>
 
           <div className="topbar-actions">
-            <NotificationBell />
+            {/* Admins get no notifications: they only oversee projects and reports. */}
+            {user.role !== "admin" && <NotificationBell />}
             <ProfileMenu />
           </div>
         </header>

@@ -110,6 +110,8 @@ export class TasksService {
     // A finished task needs no timer: stop any that are still running so the
     // hours stop counting the moment the task becomes Done.
     if (dto.status === TaskStatus.DONE) await this.stopRunningTimers(id);
+    // Sent back from Review: the reviewer's review timer stops with it.
+    if (review?.outcome === 'sent_back' && userId) await this.stopRunningTimers(id, userId);
 
     // Tell the person who put the task into Review what has to be fixed.
     if (sentBack?.assignee) {
@@ -143,9 +145,11 @@ export class TasksService {
     return { deleted: true };
   }
 
-  private async stopRunningTimers(taskId: string) {
+  private async stopRunningTimers(taskId: string, onlyUserId?: string) {
     const TimeEntry = this.taskModel.db.model('TimeEntry');
-    const running: any[] = await TimeEntry.find({ task: taskId, endTime: null });
+    const running: any[] = await TimeEntry.find(
+      onlyUserId ? { task: taskId, user: onlyUserId, endTime: null } : { task: taskId, endTime: null },
+    );
     const now = new Date();
     await Promise.all(
       running.map((entry) => {

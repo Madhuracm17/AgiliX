@@ -21,7 +21,7 @@ export class ProjectsController {
    */
   @Post()
   create(@Body() dto: CreateProjectDto, @CurrentUser() user: AuthUser) {
-    requireRole(user, 'You do not have permission to create projects. Please contact an admin or a manager.', UserRole.ADMIN, UserRole.MANAGER);
+    requireRole(user, 'Only a manager can create a project. Admins view projects and reports.', UserRole.MANAGER);
     return this.projectsService.create(dto, user);
   }
 

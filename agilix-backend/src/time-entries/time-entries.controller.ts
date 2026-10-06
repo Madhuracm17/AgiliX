@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { TimeEntriesService } from './time-entries.service';
 import { StartTimerDto } from './dto/start-timer.dto';
@@ -29,12 +30,17 @@ export class TimeEntriesController {
   @Post('start')
   async start(@Body() dto: StartTimerDto, @CurrentUser() user: AuthUser) {
     const { projectId, status, assignee, inSprint } = await this.access.assertTask(user, dto.task);
-    // Only the person the task is assigned to can time it (not even a manager).
-    if (!assignee) {
-      throw new ForbiddenException('This task has no assignee yet, so its timer cannot be started.');
-    }
-    if (assignee !== user.userId) {
-      throw new ForbiddenException('Only the person this task is assigned to can start its timer.');
+    // A tester reviewing a sprint task that is in Review can time that review,
+    // even though the task is assigned to someone else.
+    const testerReview = user.role === UserRole.TESTER && status === 'review' && inSprint;
+    // Otherwise only the person the task is assigned to can time it (not even a manager).
+    if (!testerReview) {
+      if (!assignee) {
+        throw new ForbiddenException('This task has no assignee yet, so its timer cannot be started.');
+      }
+      if (assignee !== user.userId) {
+        throw new ForbiddenException('Only the person this task is assigned to can start its timer.');
+      }
     }
     // A finished task needs no timer. (Its running timers were stopped when it became Done.)
     if (status === 'done') {
@@ -76,9 +82,13 @@ export class TimeEntriesController {
 
   @Header('Cache-Control', 'no-store')
   @Get('task/:taskId/total')
-  async getTaskTotal(@Param('taskId') taskId: string, @CurrentUser() user: AuthUser) {
+  async getTaskTotal(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Query('mine') mine?: string,
+  ) {
     await this.access.assertTask(user, taskId);
-    return this.timeEntriesService.getTaskTotal(taskId);
+    return this.timeEntriesService.getTaskTotal(taskId, mine === '1' ? user.userId : undefined);
   }
 
   /** Everyone's time on a project: managers and admins. */
