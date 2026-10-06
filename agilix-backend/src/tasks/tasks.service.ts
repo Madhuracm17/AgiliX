@@ -69,8 +69,15 @@ export class TasksService {
     const { reviewComment, ...fields } = dto;
 
     let sentBack: { assignee: string | null; title: string; project: string } | null = null;
+    // Who looked at a task in Review, so the reviewer's report can count it.
+    let review: { by: string; outcome: 'approved' | 'sent_back'; at: Date } | null = null;
     if (dto.status !== undefined) {
+      const before = await this.taskModel.findById(id).select('status sprint').lean().exec();
       sentBack = await this.checkStatusFlow(id, dto.status, reviewComment, role, userId);
+      if (userId && before?.sprint && before.status === TaskStatus.REVIEW) {
+        if (dto.status === TaskStatus.DONE) review = { by: userId, outcome: 'approved', at: new Date() };
+        if (dto.status === TaskStatus.IN_PROGRESS) review = { by: userId, outcome: 'sent_back', at: new Date() };
+      }
     }
 
     // Keep the dates the Scrum reports need: when it became Done, and when it
@@ -96,7 +103,8 @@ export class TasksService {
       changes.addedToSprintAt = dto.sprint ? new Date() : null;
     }
 
-    const task = await this.taskModel.findByIdAndUpdate(id, changes, { new: true });
+    const update: Record<string, unknown> = review ? { ...changes, $push: { reviews: review } } : changes;
+    const task = await this.taskModel.findByIdAndUpdate(id, update, { new: true });
     if (!task) throw new NotFoundException('Task not found');
 
     // A finished task needs no timer: stop any that are still running so the

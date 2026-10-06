@@ -69,6 +69,11 @@ export class Task {
   @Prop({ type: Object, default: null })
   reviewNote?: { text: string; by: string; byName: string; at: Date } | null;
 
+  // Every time someone reviewed the task (approved it, or sent it back from
+  // Review). Lets a tester's report count the reviews they did.
+  @Prop({ type: [Object], default: [] })
+  reviews?: { by: string; outcome: 'approved' | 'sent_back'; at: Date }[];
+
   // Optional: older tasks simply have no type.
   @Prop({ type: String, enum: TaskType })
   type?: TaskType;

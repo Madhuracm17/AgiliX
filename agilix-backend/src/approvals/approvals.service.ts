@@ -304,15 +304,25 @@ export class ApprovalsService {
   private async requireActiveSprint(projectId: string): Promise<{ _id: unknown; name: string }> {
     const sprint = await this.activeSprint(projectId);
     if (!sprint) {
-      throw new BadRequestException('There is no active sprint right now. Start a sprint first.');
+      throw new BadRequestException('There is no sprint to add it to. Create a sprint on the Scrum Board first.');
     }
     return sprint;
   }
 
+  /**
+   * The sprint a manager means by "current sprint": the active one, or when no
+   * sprint has been started yet, the next planned one (the sprint the board is
+   * showing). Completed sprints never count.
+   */
   private async activeSprint(projectId: string): Promise<{ _id: unknown; name: string } | null> {
-    return (await this.connection
-      .model('Sprint')
-      .findOne({ project: projectId, status: 'active' })
+    const Sprint = this.connection.model('Sprint');
+    const active = (await Sprint.findOne({ project: projectId, status: 'active' })
+      .select('name')
+      .lean()
+      .exec()) as unknown as { _id: unknown; name: string } | null;
+    if (active) return active;
+    return (await Sprint.findOne({ project: projectId, status: 'planned' })
+      .sort({ startDate: 1 })
       .select('name')
       .lean()
       .exec()) as unknown as { _id: unknown; name: string } | null;

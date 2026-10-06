@@ -287,11 +287,14 @@ export class ReportsService {
       ? ((await this.timeEntryModel.db
           .model('User')
           .find({ _id: { $in: objectIds } })
-          .select('name')
+          .select('name role')
           .lean()
-          .exec()) as unknown as Array<{ _id: unknown; name?: string }>)
+          .exec()) as unknown as Array<{ _id: unknown; name?: string; role?: string }>)
       : [];
-    const nameOf = new Map(users.map((u) => [String(u._id), u.name ?? '']));
+    // Admins do not do project work, so they are left out of the workload.
+    const nameOf = new Map(
+      users.filter((u) => u.role !== 'admin').map((u) => [String(u._id), u.name ?? '']),
+    );
 
     const people = [...ids]
       .filter((id) => nameOf.get(id))
@@ -326,11 +329,17 @@ export class ReportsService {
     };
   }
 
-  /** One person's own tasks, progress in the active sprint and tracked time. */
-  async getMyReport(projectId: string, userId: string) {
+  /**
+   * One person's own tasks, progress in the active sprint and tracked time.
+   * For a tester, the tasks they review count as their work too: a task waiting
+   * in Review is theirs to check, and once they approve it or send it back it
+   * counts as completed.
+   */
+  async getMyReport(projectId: string, userId: string, role?: string) {
     if (!OBJECT_ID_PATTERN.test(projectId ?? '')) {
       throw new BadRequestException('Invalid project id');
     }
+    const isTester = role === 'tester';
 
     const projectKey = { $in: [new Types.ObjectId(projectId), projectId] };
     const [rows, sprints, entries] = await Promise.all([
@@ -340,7 +349,24 @@ export class ReportsService {
         .find({ project: projectId, user: userId, endTime: { $ne: null } })
         .exec(),
     ]);
-    const mine = rows.filter((row: any) => row.assignee && String(row.assignee) === userId);
+
+    const assignedToMe = (row: any) => !!row.assignee && String(row.assignee) === userId;
+    const reviewedByMe = (row: any) =>
+      isTester &&
+      Array.isArray(row.reviews) &&
+      row.reviews.some((r: any) => String(r?.by) === userId);
+    const waitingForReview = (row: any) => isTester && row.status === TaskStatus.REVIEW && !!row.sprint;
+
+    // What counts as "my" work: assigned to me, plus (for a tester) what I review.
+    const mine = rows.filter((row: any) => assignedToMe(row) || reviewedByMe(row) || waitingForReview(row));
+    const isDone = (row: any) =>
+      reviewedByMe(row) || (assignedToMe(row) && row.status === TaskStatus.DONE);
+    const kindOf = (row: any): 'assigned' | 'review' | 'reviewed' =>
+      reviewedByMe(row) && !assignedToMe(row)
+        ? 'reviewed'
+        : waitingForReview(row) && !assignedToMe(row)
+          ? 'review'
+          : 'assigned';
 
     const active = sprints.find((s) => s.status === SprintStatus.ACTIVE) ?? null;
     const sprintName = (task: any) =>
@@ -361,17 +387,19 @@ export class ReportsService {
       activeSprint: active ? this.describe(active) : null,
       progress: {
         assignedTasks: activeMine.length,
-        doneTasks: activeMine.filter((t: any) => t.status === TaskStatus.DONE).length,
+        doneTasks: activeMine.filter(isDone).length,
         assignedPoints: activeMine.reduce((s: number, t: any) => s + points(t), 0),
-        donePoints: activeMine
-          .filter((t: any) => t.status === TaskStatus.DONE)
-          .reduce((s: number, t: any) => s + points(t), 0),
+        donePoints: activeMine.filter(isDone).reduce((s: number, t: any) => s + points(t), 0),
       },
       totals: {
         tasks: mine.length,
-        done: mine.filter((t: any) => t.status === TaskStatus.DONE).length,
+        done: mine.filter(isDone).length,
         inProgress: mine.filter(
-          (t: any) => t.status === TaskStatus.IN_PROGRESS || t.status === TaskStatus.REVIEW,
+          (t: any) =>
+            !isDone(t) &&
+            (t.status === TaskStatus.IN_PROGRESS ||
+              t.status === TaskStatus.REVIEW ||
+              waitingForReview(t)),
         ).length,
       },
       tasks: mine.map((t: any) => ({
@@ -382,6 +410,8 @@ export class ReportsService {
         points: points(t),
         sprint: sprintName(t),
         seconds: secondsByTask.get(String(t._id)) ?? 0,
+        kind: kindOf(t),
+        done: isDone(t),
       })),
       time: {
         totalSeconds: entries.reduce((s, e) => s + (e.durationSeconds || 0), 0),
