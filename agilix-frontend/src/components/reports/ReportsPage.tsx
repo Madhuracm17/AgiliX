@@ -672,6 +672,7 @@ function MyReports({ projectId, isTester }: { projectId: string; isTester: boole
             <thead>
               <tr>
                 <th>Task</th>
+                <th>Sprint</th>
                 <th>Status</th>
                 <th>Points</th>
                 <th>Time</th>
@@ -689,6 +690,7 @@ function MyReports({ projectId, isTester }: { projectId: string; isTester: boole
                       <span className="rpt-task-kind"> · reviewed by me</span>
                     )}
                   </td>
+                  <td>{t.sprint ?? "Backlog"}</td>
                   <td>{STATUS_LABEL[t.status] ?? t.status}</td>
                   <td>{t.points}</td>
                   <td>{formatTime(t.seconds)}</td>

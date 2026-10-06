@@ -34,8 +34,8 @@ export class AnalyticsService {
   async getWorkload(projectId: string): Promise<MemberWorkload[]> {
     const project = await this.projectModel
       .findById(projectId)
-      .populate('owner', 'name email')
-      .populate('members', 'name email');
+      .populate('owner', 'name email role')
+      .populate('members', 'name email role');
 
     if (!project) throw new NotFoundException('Project not found');
 
@@ -53,7 +53,7 @@ export class AnalyticsService {
       const users: any[] = await this.projectModel.db
         .model('User')
         .find({ _id: { $in: unresolved } })
-        .select('name email')
+        .select('name email role')
         .lean()
         .exec();
       for (const u of users) looked.set(String(u._id), u);
@@ -62,7 +62,8 @@ export class AnalyticsService {
     const memberMap = new Map<string, any>();
     for (const c of candidates) {
       const person = c.name ? c : looked.get(String(c._id ?? c));
-      if (person) memberMap.set(String(person._id), person);
+      // Admins do not do project work, so they are not part of the workload.
+      if (person && person.role !== 'admin') memberMap.set(String(person._id), person);
     }
     const members = Array.from(memberMap.values());
 

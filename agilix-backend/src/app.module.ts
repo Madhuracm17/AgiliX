@@ -13,6 +13,7 @@ import { ReportsModule } from './reports/reports.module';
 import { AccessModule } from './auth/access.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ApprovalsModule } from './approvals/approvals.module';
+import { TeamInvitesModule } from './team-invites/team-invites.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { ApprovalsModule } from './approvals/approvals.module';
     AccessModule,
     NotificationsModule,
     ApprovalsModule,
+    TeamInvitesModule,
   ],
 })
 export class AppModule {}

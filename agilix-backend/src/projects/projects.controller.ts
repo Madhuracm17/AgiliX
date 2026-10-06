@@ -15,11 +15,14 @@ export class ProjectsController {
     private readonly access: AccessService,
   ) {}
 
-  /** Admins and managers. Whoever creates the project becomes its owner. */
+  /**
+   * Admins and managers. Whoever creates the project becomes its owner. An admin
+   * can add managers; a manager's choices become team requests.
+   */
   @Post()
   create(@Body() dto: CreateProjectDto, @CurrentUser() user: AuthUser) {
     requireRole(user, 'You do not have permission to create projects. Please contact an admin or a manager.', UserRole.ADMIN, UserRole.MANAGER);
-    return this.projectsService.create(dto, user.userId);
+    return this.projectsService.create(dto, user);
   }
 
   /** Admins see every project; everyone else (managers included) only the projects they belong to. */
@@ -51,14 +54,14 @@ export class ProjectsController {
     return this.projectsService.remove(id, user);
   }
 
-  /** Admins and managers: choose who is on the team. */
+  /** Admins add managers to a team. Managers send team requests instead (see /team-invites). */
   @Patch(':id/members/:userId')
   async addMember(
     @Param('id') id: string,
     @Param('userId') userId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    requireRole(user, 'You do not have permission to manage team members. Please contact an admin or a manager.', UserRole.ADMIN, UserRole.MANAGER);
+    requireRole(user, 'Only an admin can add a manager to a team. Managers send a team request to developers and testers.', UserRole.ADMIN);
     await this.access.assertProject(user, id);
     return this.projectsService.withPeople(await this.projectsService.addMember(id, userId));
   }
@@ -72,6 +75,6 @@ export class ProjectsController {
   ) {
     requireRole(user, 'You do not have permission to manage team members. Please contact an admin or a manager.', UserRole.ADMIN, UserRole.MANAGER);
     await this.access.assertProject(user, id);
-    return this.projectsService.withPeople(await this.projectsService.removeMember(id, userId));
+    return this.projectsService.withPeople(await this.projectsService.removeMember(id, userId, user));
   }
 }

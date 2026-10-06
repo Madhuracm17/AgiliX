@@ -22,7 +22,7 @@ export class Notification {
   @Prop({ default: '' })
   link: string;
 
-  /** review_returned | approval_requested | approval_decided */
+  /** review_returned | approval_requested | approval_decided | team_invite | team_invite_decided */
   @Prop({ required: true })
   kind: string;
 }

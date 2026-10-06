@@ -12,25 +12,68 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 import { AuthUser } from '../auth/jwt-config';
 import { UserRole } from '../users/schemas/user.schema';
 import { belongsTo } from '../auth/access.service';
+import { TeamInvitesService } from '../team-invites/team-invites.service';
+
+/** Fields of a person that the web pages need (the role tells managers from developers). */
+const PERSON_FIELDS = 'name email role';
 
 @Injectable()
 export class ProjectsService {
-  constructor(@InjectModel(Project.name) private projectModel: Model<ProjectDocument>) {}
+  constructor(
+    @InjectModel(Project.name) private projectModel: Model<ProjectDocument>,
+    private readonly invites: TeamInvitesService,
+  ) {}
 
-  create(dto: CreateProjectDto, ownerId: string) {
-    return new this.projectModel({ ...dto, owner: ownerId }).save();
+  /**
+   * Whoever creates the project owns it. An admin picks managers, who are added
+   * straight away. A manager picks developers and testers, who get a team request
+   * and join once they accept.
+   */
+  async create(dto: CreateProjectDto, user: AuthUser) {
+    const { members: chosen = [], ...rest } = dto;
+    const ids = [...new Set(chosen)].filter((id) => id !== user.userId);
+
+    const people = ids.length
+      ? ((await this.projectModel.db
+          .model('User')
+          .find({ _id: { $in: ids } })
+          .select('name role')
+          .lean()
+          .exec()) as unknown as Array<{ _id: unknown; role?: string }>)
+      : [];
+    if (people.length !== ids.length) {
+      throw new BadRequestException('One of the chosen people does not exist.');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      if (people.some((p) => p.role !== UserRole.MANAGER)) {
+        throw new BadRequestException(
+          'An admin can only add managers. The manager then invites developers and testers.',
+        );
+      }
+      return new this.projectModel({ ...rest, owner: user.userId, members: ids }).save();
+    }
+
+    if (people.some((p) => p.role !== UserRole.DEVELOPER && p.role !== UserRole.TESTER)) {
+      throw new BadRequestException('A manager can only ask developers and testers to join.');
+    }
+    const project = await new this.projectModel({ ...rest, owner: user.userId }).save();
+    for (const id of ids) {
+      await this.invites.send(user.userId, String(project._id), id);
+    }
+    return project;
   }
 
   async findAll(user: AuthUser) {
     if (user.role === UserRole.ADMIN) {
-      return this.projectModel.find().populate('owner members', 'name email').exec();
+      return this.projectModel.find().populate('owner members', PERSON_FIELDS).exec();
     }
 
     const all = await this.projectModel.find().select('owner members').lean().exec();
     const visible = all.filter((p) => belongsTo(p, user.userId)).map((p) => p._id);
     return this.projectModel
       .find({ _id: { $in: visible } })
-      .populate('owner members', 'name email')
+      .populate('owner members', PERSON_FIELDS)
       .exec();
   }
 
@@ -41,7 +84,7 @@ export class ProjectsService {
     if (user && user.role !== UserRole.ADMIN && !belongsTo(access, user.userId)) {
       throw new ForbiddenException('You do not have access to this project. Please ask an admin to add you to the team.');
     }
-    const project = await this.projectModel.findById(id).populate('owner members', 'name email');
+    const project = await this.projectModel.findById(id).populate('owner members', PERSON_FIELDS);
     if (!project) throw new NotFoundException('Project not found');
     return project;
   }
@@ -72,7 +115,7 @@ export class ProjectsService {
       const users = (await this.projectModel.db
         .model('User')
         .find({ _id: { $in: ids } })
-        .select('name email')
+        .select(PERSON_FIELDS)
         .lean()
         .exec()) as Array<{ _id: unknown }>;
       for (const u of users) found.set(String(u._id), u);
@@ -130,10 +173,20 @@ export class ProjectsService {
     };
   }
 
+  /** Admins add managers straight to a team. (Managers ask developers and testers instead.) */
   async addMember(projectId: string, userId: string) {
     if (!isValidObjectId(userId)) throw new BadRequestException('Invalid user id');
-    if (!(await this.projectModel.db.model('User').exists({ _id: userId }))) {
-      throw new NotFoundException('That person does not exist');
+    const person = (await this.projectModel.db
+      .model('User')
+      .findById(userId)
+      .select('role')
+      .lean()
+      .exec()) as unknown as { role?: string } | null;
+    if (!person) throw new NotFoundException('That person does not exist');
+    if (person.role !== UserRole.MANAGER) {
+      throw new BadRequestException(
+        'An admin can only add managers. A manager asks developers and testers to join.',
+      );
     }
     const project = await this.projectModel.findByIdAndUpdate(
       projectId,
@@ -144,7 +197,11 @@ export class ProjectsService {
     return project;
   }
 
-  async removeMember(projectId: string, userId: string) {
+  /**
+   * Takes someone off the team. The owner cannot be removed, and a manager cannot
+   * remove themselves or another manager (only an admin removes managers).
+   */
+  async removeMember(projectId: string, userId: string, user: AuthUser) {
     if (!isValidObjectId(projectId) || !isValidObjectId(userId)) {
       throw new BadRequestException('Invalid id');
     }
@@ -153,11 +210,25 @@ export class ProjectsService {
     if (String(project.owner) === userId) {
       throw new BadRequestException('The project owner cannot be removed');
     }
+    if (user.role === UserRole.MANAGER) {
+      if (userId === user.userId) {
+        throw new ForbiddenException('You cannot remove yourself from the team.');
+      }
+      const target = (await this.projectModel.db
+        .model('User')
+        .findById(userId)
+        .select('role')
+        .lean()
+        .exec()) as unknown as { role?: string } | null;
+      if (target?.role === UserRole.MANAGER) {
+        throw new ForbiddenException('Only an admin can remove a manager from the team.');
+      }
+    }
     // Ids may be stored as ObjectIds or as plain text, so both forms are pulled.
     await this.projectModel.collection.updateOne(
       { _id: new Types.ObjectId(projectId) },
       { $pull: { members: { $in: [new Types.ObjectId(userId), userId] } } } as never,
     );
-    return this.projectModel.findById(projectId).populate('owner members', 'name email');
+    return this.projectModel.findById(projectId).populate('owner members', PERSON_FIELDS);
   }
 }

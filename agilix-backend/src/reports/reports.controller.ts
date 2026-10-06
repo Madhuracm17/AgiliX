@@ -62,6 +62,6 @@ export class ReportsController {
   async my(@Param('projectId') projectId: string, @CurrentUser() user: AuthUser) {
     requireRole(user, MY_REPORT_MESSAGE, UserRole.MANAGER, UserRole.DEVELOPER, UserRole.TESTER);
     await this.access.assertProject(user, projectId);
-    return this.reportsService.getMyReport(projectId, user.userId);
+    return this.reportsService.getMyReport(projectId, user.userId, user.role);
   }
 }

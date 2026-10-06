@@ -98,7 +98,12 @@ export class AccessService {
   async assertAssignee(projectId: string, assigneeId: string): Promise<void> {
     if (!isValidObjectId(assigneeId)) throw new BadRequestException('Invalid assignee id');
     const [person, project] = await Promise.all([
-      this.connection.model('User').exists({ _id: assigneeId }),
+      this.connection
+        .model('User')
+        .findById(assigneeId)
+        .select('role')
+        .lean()
+        .exec() as unknown as Promise<{ role?: string } | null>,
       this.connection
         .model('Project')
         .findById(projectId)
@@ -108,6 +113,9 @@ export class AccessService {
     ]);
     if (!person) throw new NotFoundException('That person does not exist');
     if (!project) throw new NotFoundException('Project not found');
+    if (person.role === UserRole.ADMIN) {
+      throw new BadRequestException('Tasks cannot be assigned to an admin.');
+    }
     if (!belongsTo(project, assigneeId)) {
       throw new BadRequestException(
         'That person is not on this project\'s team. Add them to the team first.',
