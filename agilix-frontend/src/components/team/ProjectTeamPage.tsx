@@ -10,11 +10,14 @@ import {
 } from "../../api/projects";
 import {
   cancelInvite,
+  getJoinedInvites,
   getProjectInvites,
   sendInvite,
+  type JoinedInvite,
   type ProjectInvite,
 } from "../../api/teamInvites";
 import { initials, readError, sameId } from "../scrum/taskDisplay";
+import { managersOf } from "./managerTeam";
 import "./team.css";
 
 /** "developer" -> "Developer", so roles read well in lists. */
@@ -38,6 +41,7 @@ export default function ProjectTeamPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [invites, setInvites] = useState<ProjectInvite[]>([]);
+  const [joined, setJoined] = useState<JoinedInvite[]>([]);
   const [choice, setChoice] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -48,11 +52,13 @@ export default function ProjectTeamPage() {
     if (!projectId) return;
     try {
       setError("");
-      const [projectData, userData, inviteData] = await Promise.all([
+      const [projectData, userData, inviteData, joinedData] = await Promise.all([
         getProject(projectId),
         canManage ? getUsers() : Promise.resolve([] as User[]),
         canManage ? getProjectInvites(projectId) : Promise.resolve([] as ProjectInvite[]),
+        getJoinedInvites(projectId).catch(() => [] as JoinedInvite[]),
       ]);
+      setJoined(joinedData);
       setProject(projectData);
       setUsers(userData);
       setInvites(inviteData);
@@ -250,6 +256,8 @@ export default function ProjectTeamPage() {
         {people.map((member) => {
           const isMe = sameId(member, user._id);
           const isOwner = sameId(member, project.owner);
+          const works = member.role === "developer" || member.role === "tester";
+          const bosses = works ? managersOf(project, joined, member) : [];
           return (
             <div className="project-team-card" key={member._id}>
               <div className="project-team-card-top">
@@ -264,6 +272,9 @@ export default function ProjectTeamPage() {
                 {isOwner && <span className="role-badge role-badge-owner">Owner</span>}
                 {isMe && <span className="project-team-me">Myself</span>}
               </div>
+              <p className="project-team-manager">
+                {bosses.length > 0 ? `Manager: ${bosses.map((m) => m.name).join(", ")}` : " "}
+              </p>
               {canRemove(member) && (
                 <button
                   className="secondary-button project-team-remove"

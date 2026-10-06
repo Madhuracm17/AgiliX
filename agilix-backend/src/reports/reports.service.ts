@@ -335,6 +335,27 @@ export class ReportsService {
    * in Review is theirs to check, and once they approve it or send it back it
    * counts as completed.
    */
+  /**
+   * An admin looks at one developer's or tester's own report. The role comes from
+   * the account, so a tester's review work is counted the same way as on their own page.
+   */
+  async getUserReport(projectId: string, targetUserId: string) {
+    if (!OBJECT_ID_PATTERN.test(targetUserId ?? '')) {
+      throw new BadRequestException('Invalid user id');
+    }
+    const person = (await this.taskModel.db
+      .model('User')
+      .findById(targetUserId)
+      .select('role')
+      .lean()
+      .exec()) as unknown as { role?: string } | null;
+    if (!person) throw new NotFoundException('User not found');
+    if (person.role !== 'developer' && person.role !== 'tester') {
+      throw new BadRequestException('Personal reports exist for developers and testers.');
+    }
+    return this.getMyReport(projectId, targetUserId, person.role);
+  }
+
   async getMyReport(projectId: string, userId: string, role?: string) {
     if (!OBJECT_ID_PATTERN.test(projectId ?? '')) {
       throw new BadRequestException('Invalid project id');

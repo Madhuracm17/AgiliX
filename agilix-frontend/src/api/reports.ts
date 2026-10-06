@@ -110,8 +110,9 @@ export const getVelocity = (projectId: string) =>
 export const getSprintReport = (sprintId: string) =>
   api<SprintReport>(`/reports/scrum/sprint-report/${sprintId}`);
 
-export const getMyReport = (projectId: string) =>
-  api<MyReport>(`/reports/scrum/my/${projectId}`);
+/** `userId` is for an admin looking at one developer's or tester's report. */
+export const getMyReport = (projectId: string, userId?: string) =>
+  api<MyReport>(`/reports/scrum/my/${projectId}${userId ? `?user=${userId}` : ""}`);
 
 export const getBurnout = (sprintId: string) =>
   api<BurnoutReport>(`/reports/scrum/burnout/${sprintId}`);

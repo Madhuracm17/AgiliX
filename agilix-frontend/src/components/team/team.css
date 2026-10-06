@@ -107,6 +107,7 @@
 .project-team-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-auto-rows: 1fr;
   gap: 14px;
   margin-top: 16px;
 }
@@ -278,4 +279,93 @@
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+/* ---- Admin project page ---- */
+
+.page-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-section-title {
+  margin: 22px 0 0;
+  font-size: 17px;
+}
+
+.admin-manager-card {
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-manager-card:hover,
+.admin-manager-selected {
+  border-color: #829172;
+  box-shadow: 0 0 0 2px #dfe6d8;
+}
+
+.admin-team-section {
+  margin-top: 8px;
+}
+
+.admin-hint {
+  margin-top: 14px;
+}
+
+.admin-project-group {
+  margin-top: 6px;
+}
+
+.admin-project-name {
+  margin: 16px 0 0;
+  font-size: 15px;
+  color: #4a4f46;
+}
+
+.project-team-tags .role-select {
+  margin-top: 0;
+}
+
+.admin-manager-panel {
+  margin-top: 14px;
+}
+
+.admin-action-active {
+  border-color: #829172;
+  background: #eef1ea;
+}
+
+.project-team-card .project-team-manager {
+  margin-top: 8px;
+  min-height: 18px;
+  font-size: 13px;
+  color: #4a4f46;
+}
+
+.admin-project-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.admin-project-head .admin-project-name {
+  margin: 0;
+}
+
+.admin-project-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-member-card {
+  cursor: pointer;
+}
+
+.admin-member-card:hover {
+  border-color: #829172;
 }

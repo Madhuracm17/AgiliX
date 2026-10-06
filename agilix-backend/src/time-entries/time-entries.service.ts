@@ -110,9 +110,10 @@ export class TimeEntriesService {
       .exec();
   }
 
-  async getTaskTotal(taskId: string) {
+  /** With `userId`, only that person's time on the task (a tester's own review time). */
+  async getTaskTotal(taskId: string, userId?: string) {
     const entries = await this.timeEntryModel
-      .find({ task: taskId, endTime: { $ne: null } })
+      .find(userId ? { task: taskId, user: userId, endTime: { $ne: null } } : { task: taskId, endTime: { $ne: null } })
       .exec();
     const totalSeconds = entries.reduce((sum, e) => sum + e.durationSeconds, 0);
     return { totalSeconds };

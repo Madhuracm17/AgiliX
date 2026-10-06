@@ -45,15 +45,6 @@ export class ProjectsService {
       throw new BadRequestException('One of the chosen people does not exist.');
     }
 
-    if (user.role === UserRole.ADMIN) {
-      if (people.some((p) => p.role !== UserRole.MANAGER)) {
-        throw new BadRequestException(
-          'An admin can only add managers. The manager then invites developers and testers.',
-        );
-      }
-      return new this.projectModel({ ...rest, owner: user.userId, members: ids }).save();
-    }
-
     if (people.some((p) => p.role !== UserRole.DEVELOPER && p.role !== UserRole.TESTER)) {
       throw new BadRequestException('A manager can only ask developers and testers to join.');
     }
@@ -208,7 +199,33 @@ export class ProjectsService {
     const project = await this.projectModel.findById(projectId).select('owner').lean().exec();
     if (!project) throw new NotFoundException('Project not found');
     if (String(project.owner) === userId) {
-      throw new BadRequestException('The project owner cannot be removed');
+      // Only an admin can take the manager who created the project off it. The
+      // project then passes to another manager on it, or to the admin.
+      if (user.role !== UserRole.ADMIN) {
+        throw new BadRequestException('The project owner cannot be removed');
+      }
+      const full = (await this.projectModel.findById(projectId).select('members').lean().exec()) as unknown as {
+        members?: unknown[];
+      } | null;
+      const memberIds = (full?.members ?? []).map((m) => String(m));
+      const managers = memberIds.length
+        ? ((await this.projectModel.db
+            .model('User')
+            .find({ _id: { $in: memberIds } })
+            .select('role')
+            .lean()
+            .exec()) as unknown as Array<{ _id: unknown; role?: string }>)
+        : [];
+      const successor = managers.find((m) => m.role === UserRole.MANAGER);
+      const nextOwner = successor ? String(successor._id) : user.userId;
+      await this.projectModel.collection.updateOne(
+        { _id: new Types.ObjectId(projectId) },
+        {
+          $set: { owner: new Types.ObjectId(nextOwner) },
+          $pull: { members: { $in: [new Types.ObjectId(nextOwner), nextOwner] } },
+        } as never,
+      );
+      return this.projectModel.findById(projectId).populate('owner members', PERSON_FIELDS);
     }
     if (user.role === UserRole.MANAGER) {
       if (userId === user.userId) {

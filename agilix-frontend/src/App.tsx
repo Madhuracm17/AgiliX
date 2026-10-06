@@ -6,7 +6,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useAuth } from "./auth/auth-context";
 import AppShell from "./components/layout/AppShell";
 import ProjectDashboard from "./components/dashboard/ProjectDashboard";
@@ -19,6 +19,7 @@ import ProjectCard from "./components/projects/ProjectCard";
 import ProjectSettings from "./components/projects/ProjectSettings";
 import ApprovalsPage from "./components/approvals/ApprovalsPage";
 import TeamRequests from "./components/team/TeamRequests";
+import AdminTeamPage from "./components/team/AdminTeamPage";
 import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
 import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
 import { PROJECT_STATUS_LABELS, type ProjectStatus } from "./api/projects";
@@ -103,6 +104,8 @@ function TaskTimer({ task }: { task: Task }) {
   const [elapsed, setElapsed] = useState(0);
   const [loading, setLoading] = useState(true);
   const [pausedByInactivity, setPausedByInactivity] = useState(false);
+  // A tester's review timer is their own: it counts only their time, not the developer's.
+  const reviewTimer = currentUser.role === "tester" && task.status === "review";
 
   // A ref (not state) so updating it on every mouse move doesn't re-render.
   const lastActivityRef = useRef(Date.now());
@@ -120,7 +123,7 @@ function TaskTimer({ task }: { task: Task }) {
       const [activeRes, totalRes] = await Promise.all([
         // The server returns the logged-in user's own running timer on this task.
         fetch(`${API_URL}/time-entries/task/${task._id}/active`),
-        fetch(`${API_URL}/time-entries/task/${task._id}/total`),
+        fetch(`${API_URL}/time-entries/task/${task._id}/total${reviewTimer ? "?mine=1" : ""}`),
       ]);
 
       // A newer load() started while this one was still in flight —
@@ -155,7 +158,7 @@ function TaskTimer({ task }: { task: Task }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task._id]);
+  }, [task._id, reviewTimer]);
 
   // Starting a timer on another task pauses this one (only one runs at a time).
   // The page that started it announces which tasks were paused.
@@ -294,8 +297,10 @@ function TaskTimer({ task }: { task: Task }) {
   if (loading) return null;
 
   // Only the person a task is assigned to can time it (the server enforces this too).
-  const isMine = !!task.assignee && task.assignee._id === currentUser._id;
-  if (!task.assignee) {
+  // A tester can also time their review of a task that is in Review.
+  const testerReview = reviewTimer;
+  const isMine = (!!task.assignee && task.assignee._id === currentUser._id) || testerReview;
+  if (!task.assignee && !testerReview) {
     return <span className="timer-hint">Assign someone to track time</span>;
   }
 
@@ -331,6 +336,7 @@ function TaskTimer({ task }: { task: Task }) {
 
   return (
     <div className="task-timer">
+      {reviewTimer && <span className="timer-hint">Your review time</span>}
       {activeEntryId ? (
         <button className="timer-button timer-running" onClick={pause}>
           ⏱ {formatDuration(clock)} ⏸ Pause
@@ -364,8 +370,8 @@ async function failureMessage(response: Response, fallback: string): Promise<str
 
 function ProjectsPage() {
   const { user: currentUser } = useAuth();
-  // Admins and managers create projects (the backend enforces this too).
-  const canCreateProjects = currentUser.role === "admin" || currentUser.role === "manager";
+  // Only managers create projects (the backend enforces this too). Admins view them.
+  const canCreateProjects = currentUser.role === "manager";
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -424,9 +430,7 @@ function ProjectsPage() {
     (u) =>
       u._id !== currentUser._id &&
       !members.some((m) => m._id === u._id) &&
-      (currentUser.role === "admin"
-        ? u.role === "manager"
-        : u.role === "developer" || u.role === "tester")
+      (u.role === "developer" || u.role === "tester")
   );
 
   const addMember = () => {
@@ -482,15 +486,19 @@ function ProjectsPage() {
     <div>
       <div className="page-header">
         <div>
-          <p
-            className="eyebrow breadcrumb-link"
-            onClick={() => navigate("/dashboard")}
-          >
-            ← Dashboard
-          </p>
+          {currentUser.role !== "admin" && (
+            <p
+              className="eyebrow breadcrumb-link"
+              onClick={() => navigate("/dashboard")}
+            >
+              ← Dashboard
+            </p>
+          )}
           <h1>Projects</h1>
           <p className="page-description">
-            Manage your Agile projects and teams.
+            {currentUser.role === "admin"
+              ? "Open a project to see its managers, their teams and reports."
+              : "Manage your Agile projects and teams."}
           </p>
         </div>
 
@@ -667,6 +675,29 @@ function TeamPage() {
       setLoading(true);
       setError("");
 
+      if (!isAdmin) {
+        // Everyone else sees only the people who share a project with them.
+        const projectResponse = await fetch(`${API_URL}/projects`);
+        if (!projectResponse.ok) throw new Error("Failed to load team members");
+        const mine = (await projectResponse.json()) as Project[];
+        const people: User[] = [];
+        for (const project of mine) {
+          for (const person of [project.owner, ...(project.members ?? [])]) {
+            if (
+              person &&
+              person._id &&
+              person.role !== "admin" &&
+              !people.some((p) => p._id === person._id)
+            ) {
+              people.push(person);
+            }
+          }
+        }
+        if (!people.some((p) => p._id === currentUser._id)) people.unshift(currentUser);
+        setUsers(people);
+        return;
+      }
+
       const response = await fetch(`${API_URL}/users`);
 
       if (!response.ok) {
@@ -713,13 +744,15 @@ function TeamPage() {
         <div>
           <p
             className="eyebrow breadcrumb-link"
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate(isAdmin ? "/projects" : "/dashboard")}
           >
-            ← Dashboard
+            {isAdmin ? "← All Projects" : "← Dashboard"}
           </p>
           <h1>Team</h1>
           <p className="page-description">
-            Manage members of your AgiliX workspace.
+            {isAdmin
+              ? "Manage members of your AgiliX workspace."
+              : "People you work with on your projects."}
           </p>
         </div>
 
@@ -742,7 +775,7 @@ function TeamPage() {
       {!loading && !error && users.length === 0 && (
         <div className="empty-state">
           <h2>No team members</h2>
-          <p>Add your first member to the workspace.</p>
+          <p>{isAdmin ? "Add your first member to the workspace." : "People on your projects will appear here."}</p>
         </div>
       )}
 
@@ -782,7 +815,7 @@ function TeamPage() {
   );
 }
 
-function ProjectOverviewPage() {
+function ProjectOverviewBody() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
@@ -1534,10 +1567,43 @@ function KanbanBoardPage() {
 }
 
 // First page after login (Figma "Dashboard"): totals across all my projects.
+/** A project's page. Admins have no project pages (they work from Team Members), so they go there. */
+function ProjectOverviewPage() {
+  const { user } = useAuth();
+  return user.role === "admin" ? <Navigate to="/team" replace /> : <ProjectOverviewBody />;
+}
+
+/** Admins have no dashboard: they start on Team Members. */
+function HomePage() {
+  const { user } = useAuth();
+  return user.role === "admin" ? <Navigate to="/team" replace /> : <DashboardPage />;
+}
+
+/** The All Projects list is not part of the admin's menu either. */
+function ProjectsRoute() {
+  const { user } = useAuth();
+  return user.role === "admin" ? <Navigate to="/team" replace /> : <ProjectsPage />;
+}
+
+/** Admins only look at teams and reports, so the task, sprint and board pages send them to Team Members. */
+function NotForAdmin({ children }: { children: ReactElement }) {
+  const { user } = useAuth();
+  if (user.role === "admin") {
+    return <Navigate to="/team" replace />;
+  }
+  return children;
+}
+
+/** Team Members: admins see the managers and their teams, everyone else the people on their projects. */
+function TeamRoute() {
+  const { user } = useAuth();
+  return user.role === "admin" ? <AdminTeamPage /> : <TeamPage />;
+}
+
 function DashboardPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
-  const canCreateProjects = currentUser.role === "admin" || currentUser.role === "manager";
+  const canCreateProjects = currentUser.role === "manager";
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState("");
   // Bumped after a team request is accepted, so the new project shows up.
@@ -1621,9 +1687,9 @@ function App() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<HomePage />} />
 
-          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects" element={<ProjectsRoute />} />
 
           <Route
             path="/projects/:projectId"
@@ -1632,27 +1698,27 @@ function App() {
 
           <Route
             path="/projects/:projectId/backlog"
-            element={<BacklogPage />}
+            element={<NotForAdmin><BacklogPage /></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/sprints"
-            element={<SprintPage />}
+            element={<NotForAdmin><SprintPage /></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/tasks/new"
-            element={<NewTaskPage />}
+            element={<NotForAdmin><NewTaskPage /></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/kanban"
-            element={<KanbanBoardPage />}
+            element={<NotForAdmin><KanbanBoardPage /></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/ai-insights"
-            element={<AiInsightsPage />}
+            element={<NotForAdmin><AiInsightsPage /></NotForAdmin>}
           />
 
           <Route
@@ -1662,14 +1728,14 @@ function App() {
 
           <Route
             path="/projects/:projectId/team"
-            element={<ProjectTeamPage />}
+            element={<NotForAdmin><ProjectTeamPage /></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/approvals"
-            element={<ApprovalsPage />}
+            element={<NotForAdmin><ApprovalsPage /></NotForAdmin>}
           />
-          <Route path="/team" element={<TeamPage />} />
+          <Route path="/team" element={<TeamRoute />} />
 
           {/* A password reset link opened while already logged in. */}
         </Route>
