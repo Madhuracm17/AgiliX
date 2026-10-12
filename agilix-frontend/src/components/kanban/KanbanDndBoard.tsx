@@ -44,6 +44,12 @@ type Props<T extends BoardTask> = {
    * should only exist once per task, like the timer.
    */
   renderCard: (task: T, overlay: boolean) => ReactNode;
+  /** Start of the board, column and card class names. Kanban keeps "kanban"; Scrum passes "scrum". */
+  classPrefix?: string;
+  /** Whether this card can be picked up. Missing = every card. */
+  canDrag?: (task: T) => boolean;
+  /** Whether the card being dragged may be dropped on this column. Missing = any column. */
+  canDrop?: (task: T, status: string) => boolean;
 };
 
 // Mouse: a 6px move starts a drag, so clicks on buttons inside a card still work.
@@ -64,6 +70,9 @@ export default function KanbanDndBoard<T extends BoardTask>({
   onMove,
   renderCard,
   limits,
+  classPrefix = "kanban",
+  canDrag,
+  canDrop,
 }: Props<T>) {
   const sensors = useSensors(
     useSensor(MouseSensor, MOUSE),
@@ -89,6 +98,7 @@ export default function KanbanDndBoard<T extends BoardTask>({
     const task = tasks.find((t) => t._id === active.id);
     const status = String(over.id);
     if (!task || task.status === status) return;
+    if (canDrop && !canDrop(task, status)) return;
 
     onMove(task._id, status);
   };
@@ -120,7 +130,7 @@ export default function KanbanDndBoard<T extends BoardTask>({
         },
       }}
     >
-      <div className="kanban-board">
+      <div className={`${classPrefix}-board`}>
         {columns.map((column) => {
           const columnTasks = tasks.filter((t) => t.status === column.key);
           return (
@@ -131,14 +141,21 @@ export default function KanbanDndBoard<T extends BoardTask>({
               limit={limits?.[column.key] ?? 0}
               dragging={activeId !== null}
               draggingFromHere={activeTask?.status === column.key}
+              prefix={classPrefix}
+              disabled={Boolean(activeTask && canDrop && !canDrop(activeTask, column.key))}
             >
               {columnTasks.length === 0 && (
-                <p className="kanban-empty">
+                <p className={`${classPrefix}-empty`}>
                   {activeId ? "Drop here" : "No tasks here"}
                 </p>
               )}
               {columnTasks.map((task) => (
-                <DraggableCard key={task._id} id={task._id}>
+                <DraggableCard
+                  key={task._id}
+                  id={task._id}
+                  prefix={classPrefix}
+                  disabled={canDrag ? !canDrag(task) : false}
+                >
                   {renderCard(task, false)}
                 </DraggableCard>
               ))}
@@ -150,7 +167,7 @@ export default function KanbanDndBoard<T extends BoardTask>({
       {/* The copy that follows the pointer while the real card waits, dimmed, in its column. */}
       <DragOverlay dropAnimation={null}>
         {activeTask ? (
-          <div className="kanban-card kanban-card-overlay">{renderCard(activeTask, true)}</div>
+          <div className={`${classPrefix}-card kanban-card-overlay`}>{renderCard(activeTask, true)}</div>
         ) : null}
       </DragOverlay>
     </DndContext>
@@ -163,6 +180,8 @@ function DroppableColumn({
   limit,
   dragging,
   draggingFromHere,
+  prefix,
+  disabled,
   children,
 }: {
   column: KanbanColumn;
@@ -172,14 +191,18 @@ function DroppableColumn({
   dragging: boolean;
   /** The card being dragged started in this column (so dropping here changes nothing). */
   draggingFromHere: boolean;
+  /** Start of the class names ("kanban" or "scrum"). */
+  prefix: string;
+  /** The card being dragged cannot be dropped here. */
+  disabled: boolean;
   children: ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: column.key });
+  const { setNodeRef, isOver } = useDroppable({ id: column.key, disabled });
 
   const full = limit > 0 && count >= limit;
   const over = limit > 0 && count > limit;
 
-  const classes = ["kanban-column"];
+  const classes = [`${prefix}-column`];
   if (dragging) classes.push("kanban-column-droppable");
   if (isOver) {
     classes.push(full && !draggingFromHere ? "kanban-column-over-full" : "kanban-column-over");
@@ -188,10 +211,10 @@ function DroppableColumn({
 
   return (
     <div ref={setNodeRef} className={classes.join(" ")}>
-      <div className="kanban-column-header">
+      <div className={`${prefix}-column-header`}>
         <span>{column.label}</span>
         <span
-          className={`kanban-column-count${full ? " kanban-column-count-full" : ""}`}
+          className={`${prefix}-column-count${full ? " kanban-column-count-full" : ""}`}
           title={limit > 0 ? `WIP limit: ${limit}` : undefined}
         >
           {limit > 0 ? `${count} / ${limit}` : count}
@@ -204,13 +227,24 @@ function DroppableColumn({
             : `At the limit of ${limit}. Finish a task before starting another.`}
         </p>
       )}
-      <div className="kanban-column-body">{children}</div>
+      <div className={`${prefix}-column-body`}>{children}</div>
     </div>
   );
 }
 
-function DraggableCard({ id, children }: { id: string; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id });
+function DraggableCard({
+  id,
+  prefix,
+  disabled,
+  children,
+}: {
+  id: string;
+  prefix: string;
+  /** The card cannot be picked up (it stays in place and is not draggable). */
+  disabled: boolean;
+  children: ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, disabled });
   const { onKeyDown, ...pointerListeners } = (listeners ?? {}) as NonNullable<DraggableSyntheticListeners>;
 
   // Space/Enter on a button inside the card (e.g. the timer) must press that
@@ -222,7 +256,7 @@ function DraggableCard({ id, children }: { id: string; children: ReactNode }) {
   return (
     <div
       ref={setNodeRef}
-      className={`kanban-card kanban-card-draggable${isDragging ? " kanban-card-dragging" : ""}`}
+      className={`${prefix}-card${disabled ? "" : " kanban-card-draggable"}${isDragging ? " kanban-card-dragging" : ""}`}
       {...attributes}
       {...pointerListeners}
       onKeyDown={handleKeyDown}
