@@ -28,6 +28,11 @@ export class Project {
   // Where the project stands. Older projects have no value and count as active.
   @Prop({ type: String, enum: ['active', 'on_hold', 'completed'], default: 'active' })
   status: ProjectStatus;
+
+  // Kanban only: the most tasks allowed in the In Progress column at once
+  // (the WIP limit). 0 means no limit. Older projects have no value: no limit.
+  @Prop({ type: Number, default: 0, min: 0 })
+  wipLimit: number;
 }
 
 export const ProjectSchema = SchemaFactory.createForClass(Project);

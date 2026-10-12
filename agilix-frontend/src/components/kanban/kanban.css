@@ -137,3 +137,59 @@
 .kanban-insights-slot {
   margin-top: 24px;
 }
+
+/* WIP limit (B2). */
+.kanban-wip-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #4a4f46;
+}
+
+.kanban-wip-setting label {
+  font-weight: 600;
+}
+
+.kanban-wip-setting input {
+  width: 72px;
+  border: 1px solid #ddd5c0;
+  border-radius: 7px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.kanban-wip-hint {
+  color: #8f9285;
+  font-size: 12px;
+}
+
+/* Column at (or over) its limit: a warm edge and a short note under the header. */
+.kanban-column-full {
+  box-shadow: inset 0 0 0 2px var(--clay-tint, #f3e2d6);
+}
+
+.kanban-column-count-full {
+  background: var(--clay-dark, #8e5a3c) !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.kanban-wip-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--clay-tint, #f3e2d6);
+  color: var(--clay-dark, #8e5a3c);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Dragging a card over a full column: show that it will not be accepted. */
+.kanban-column-over-full {
+  background: var(--clay-tint, #f3e2d6);
+  box-shadow: inset 0 0 0 2px var(--clay-dark, #8e5a3c);
+}

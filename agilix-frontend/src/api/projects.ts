@@ -18,6 +18,8 @@ export interface Project {
   members: User[];
   methodology?: "scrum" | "kanban";
   status?: ProjectStatus;
+  /** Kanban only: most tasks allowed in In Progress at once. 0 or missing = no limit. */
+  wipLimit?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -61,6 +63,7 @@ export interface UpdateProjectData {
   name?: string;
   description?: string;
   status?: ProjectStatus;
+  wipLimit?: number;
 }
 
 export function updateProject(id: string, data: UpdateProjectData) {

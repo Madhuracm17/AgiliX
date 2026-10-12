@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Task, TaskDocument, TaskStatus } from './schemas/task.schema';
 import { Sprint, SprintDocument, SprintStatus } from '../sprints/schemas/sprint.schema';
+import { Project, ProjectDocument } from '../projects/schemas/project.schema';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserRole } from '../users/schemas/user.schema';
@@ -39,6 +40,7 @@ export class TasksService {
   constructor(
     @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
     @InjectModel(Sprint.name) private sprintModel: Model<SprintDocument>,
+    @InjectModel(Project.name) private projectModel: Model<ProjectDocument>,
     private readonly notifications: NotificationsService,
   ) {}
   create(dto: CreateTaskDto) {
@@ -74,6 +76,7 @@ export class TasksService {
     if (dto.status !== undefined) {
       const before = await this.taskModel.findById(id).select('status sprint').lean().exec();
       sentBack = await this.checkStatusFlow(id, dto.status, reviewComment, role, userId);
+      if (dto.status === TaskStatus.IN_PROGRESS) await this.checkWipLimit(id);
       if (userId && before?.sprint && before.status === TaskStatus.REVIEW) {
         if (dto.status === TaskStatus.DONE) review = { by: userId, outcome: 'approved', at: new Date() };
         if (dto.status === TaskStatus.IN_PROGRESS) review = { by: userId, outcome: 'sent_back', at: new Date() };
@@ -158,6 +161,37 @@ export class TasksService {
         return entry.save();
       }),
     );
+  }
+
+  /**
+   * Kanban WIP limit: a task may join the In Progress column only while the
+   * column holds fewer tasks than the project's limit. Sprint (Scrum) tasks,
+   * projects without a limit, and tasks already In Progress are not affected.
+   * Everyone, managers included, is held to the limit; a manager can raise it.
+   */
+  private async checkWipLimit(taskId: string): Promise<void> {
+    if (!OBJECT_ID_PATTERN.test(taskId)) return; // checkStatusFlow reports the bad id
+    const task = await this.taskModel.findById(taskId).select('status sprint project').lean().exec();
+    if (!task || task.sprint || task.status === TaskStatus.IN_PROGRESS) return;
+
+    const project = await this.projectModel
+      .findById(task.project)
+      .select('methodology wipLimit')
+      .lean()
+      .exec();
+    const limit = Number(project?.wipLimit) || 0;
+    if (!project || project.methodology !== 'kanban' || limit <= 0) return;
+
+    const inProgress = await this.taskModel.countDocuments({
+      project: task.project,
+      status: TaskStatus.IN_PROGRESS,
+    });
+    if (inProgress >= limit) {
+      throw new BadRequestException(
+        `In Progress is full: the limit is ${limit} task${limit === 1 ? '' : 's'}. ` +
+          'Finish or move a task out of In Progress first, or ask a manager to raise the limit.',
+      );
+    }
   }
 
   /**

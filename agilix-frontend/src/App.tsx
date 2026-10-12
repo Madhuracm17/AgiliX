@@ -22,14 +22,14 @@ import TeamRequests from "./components/team/TeamRequests";
 import AdminTeamPage from "./components/team/AdminTeamPage";
 import KanbanDndBoard from "./components/kanban/KanbanDndBoard";
 import { personLabel, useProjectPeople } from "./components/team/useProjectPeople";
-import { canEditTaskPlan } from "./components/scrum/taskDisplay";
+import { canEditTaskPlan, readError } from "./components/scrum/taskDisplay";
 import StoryPointEstimator from "./components/ai/StoryPointEstimator";
 import PriorityRecommender from "./components/ai/PriorityRecommender";
 import KanbanInsights from "./components/ai/KanbanInsights";
 import { STORY_POINT_SCALE, type StoryPointValue } from "./api/ai";
 import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
 import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
-import { PROJECT_STATUS_LABELS, type ProjectStatus } from "./api/projects";
+import { PROJECT_STATUS_LABELS, getProject, updateProject, type ProjectStatus } from "./api/projects";
 import "./components/team/team.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -1312,6 +1312,48 @@ function KanbanBoardPage() {
   // The card whose "AI & estimate" panel is open, if any.
   const [toolsTaskId, setToolsTaskId] = useState<string | null>(null);
 
+  // WIP limit: the most tasks allowed in In Progress at once (0 = no limit).
+  const [wipLimit, setWipLimit] = useState(0);
+  const [editingLimit, setEditingLimit] = useState(false);
+  const [limitDraft, setLimitDraft] = useState("0");
+  const [savingLimit, setSavingLimit] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    getProject(projectId)
+      .then((project) => {
+        if (!cancelled) setWipLimit(project.wipLimit ?? 0);
+      })
+      .catch(() => {
+        // Without the project the board still works, just without a limit shown.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
+
+  const saveWipLimit = async () => {
+    if (!projectId) return;
+    const value = limitDraft.trim() === "" ? 0 : Number(limitDraft);
+    if (!Number.isInteger(value) || value < 0 || value > 100) {
+      alert("Please enter a whole number from 0 to 100 (0 means no limit).");
+      return;
+    }
+    try {
+      setSavingLimit(true);
+      const saved = await updateProject(projectId, { wipLimit: value });
+      setWipLimit(saved.wipLimit ?? value);
+      setEditingLimit(false);
+    } catch (err) {
+      alert(readError(err, "We could not save the WIP limit."));
+    } finally {
+      setSavingLimit(false);
+    }
+  };
+
   const load = async () => {
     if (!projectId) return;
 
@@ -1384,6 +1426,17 @@ function KanbanBoardPage() {
   };
 
   const moveTask = async (taskId: string, status: Task["status"]) => {
+    // WIP limit: don't start another task while In Progress is full.
+    // (The backend checks this too; this just saves a round trip.)
+    if (status === "in_progress" && wipLimit > 0 && inProgressCount >= wipLimit) {
+      alert(
+        `In Progress is full: the limit is ${wipLimit} task${wipLimit === 1 ? "" : "s"}. ` +
+          "Finish or move a task out of In Progress first" +
+          (canAssignOthers ? ", or raise the limit." : ", or ask a manager to raise the limit."),
+      );
+      return;
+    }
+
     // Optimistic update so the card jumps columns instantly, then
     // reconcile with the server. Reload on failure to undo it.
     setTasks((prev) =>
@@ -1492,6 +1545,64 @@ function KanbanBoardPage() {
             Continuous workflow — drag tasks across columns as work
             progresses.
           </p>
+
+          {/* WIP limit: everyone sees it; managers and admins can change it. */}
+          <div className="kanban-wip-setting">
+            {!editingLimit ? (
+              <>
+                <span>
+                  In Progress limit:{" "}
+                  <strong>{wipLimit > 0 ? `${wipLimit} task${wipLimit === 1 ? "" : "s"}` : "none"}</strong>
+                </span>
+                {canAssignOthers && (
+                  <button
+                    type="button"
+                    className="kanban-tools-toggle"
+                    onClick={() => {
+                      setLimitDraft(String(wipLimit));
+                      setEditingLimit(true);
+                    }}
+                  >
+                    {wipLimit > 0 ? "Change" : "Set a limit"}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <label htmlFor="kanban-wip-input">In Progress limit</label>
+                <input
+                  id="kanban-wip-input"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={limitDraft}
+                  onChange={(e) => setLimitDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveWipLimit();
+                    if (e.key === "Escape") setEditingLimit(false);
+                  }}
+                />
+                <span className="kanban-wip-hint">0 = no limit</span>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={saveWipLimit}
+                  disabled={savingLimit}
+                >
+                  {savingLimit ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setEditingLimit(false)}
+                  disabled={savingLimit}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="scrum-header-actions">
@@ -1629,6 +1740,7 @@ function KanbanBoardPage() {
           columns={columns}
           tasks={tasks}
           onMove={(taskId, status) => moveTask(taskId, status as Task["status"])}
+          limits={{ in_progress: wipLimit }}
           renderCard={(task, overlay) => (
             <>
               <h3>{task.title}</h3>

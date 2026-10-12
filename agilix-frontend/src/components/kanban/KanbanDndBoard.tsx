@@ -36,6 +36,8 @@ type Props<T extends BoardTask> = {
   columns: KanbanColumn[];
   tasks: T[];
   onMove: (taskId: string, status: string) => void;
+  /** WIP limits by column key (e.g. { in_progress: 4 }). 0 or missing = no limit. */
+  limits?: Partial<Record<string, number>>;
   /**
    * The content of one card (title, badges, timer…). `overlay` is true for the
    * copy that follows the pointer while dragging; leave out anything that
@@ -61,6 +63,7 @@ export default function KanbanDndBoard<T extends BoardTask>({
   tasks,
   onMove,
   renderCard,
+  limits,
 }: Props<T>) {
   const sensors = useSensors(
     useSensor(MouseSensor, MOUSE),
@@ -125,7 +128,9 @@ export default function KanbanDndBoard<T extends BoardTask>({
               key={column.key}
               column={column}
               count={columnTasks.length}
+              limit={limits?.[column.key] ?? 0}
               dragging={activeId !== null}
+              draggingFromHere={activeTask?.status === column.key}
             >
               {columnTasks.length === 0 && (
                 <p className="kanban-empty">
@@ -155,26 +160,50 @@ export default function KanbanDndBoard<T extends BoardTask>({
 function DroppableColumn({
   column,
   count,
+  limit,
   dragging,
+  draggingFromHere,
   children,
 }: {
   column: KanbanColumn;
   count: number;
+  /** WIP limit; 0 = none. */
+  limit: number;
   dragging: boolean;
+  /** The card being dragged started in this column (so dropping here changes nothing). */
+  draggingFromHere: boolean;
   children: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.key });
 
+  const full = limit > 0 && count >= limit;
+  const over = limit > 0 && count > limit;
+
   const classes = ["kanban-column"];
   if (dragging) classes.push("kanban-column-droppable");
-  if (isOver) classes.push("kanban-column-over");
+  if (isOver) {
+    classes.push(full && !draggingFromHere ? "kanban-column-over-full" : "kanban-column-over");
+  }
+  if (full) classes.push("kanban-column-full");
 
   return (
     <div ref={setNodeRef} className={classes.join(" ")}>
       <div className="kanban-column-header">
         <span>{column.label}</span>
-        <span className="kanban-column-count">{count}</span>
+        <span
+          className={`kanban-column-count${full ? " kanban-column-count-full" : ""}`}
+          title={limit > 0 ? `WIP limit: ${limit}` : undefined}
+        >
+          {limit > 0 ? `${count} / ${limit}` : count}
+        </span>
       </div>
+      {limit > 0 && full && (
+        <p className="kanban-wip-note" role="status">
+          {over
+            ? `Over the limit of ${limit}. Finish tasks before starting new ones.`
+            : `At the limit of ${limit}. Finish a task before starting another.`}
+        </p>
+      )}
       <div className="kanban-column-body">{children}</div>
     </div>
   );

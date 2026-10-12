@@ -128,6 +128,7 @@ export class ProjectsService {
     if (dto.name !== undefined) changes.name = dto.name.trim();
     if (dto.description !== undefined) changes.description = dto.description.trim();
     if (dto.status !== undefined) changes.status = dto.status;
+    if (dto.wipLimit !== undefined) changes.wipLimit = dto.wipLimit;
     const project = await this.projectModel.findByIdAndUpdate(id, changes, { new: true });
     if (!project) throw new NotFoundException('Project not found');
     return project;
