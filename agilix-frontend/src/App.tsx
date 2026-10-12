@@ -1335,6 +1335,11 @@ function KanbanBoardPage() {
 
   const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
 
+  // Story points: set by the person doing the task, or adjusted by a manager.
+  // (The backend enforces the same rule.)
+  const canEditPoints = (task: Task) =>
+    canAssignOthers || (!!task.assignee && task.assignee._id === currentUser._id);
+
   const saveWipLimit = async () => {
     if (!projectId) return;
     const value = limitDraft.trim() === "" ? 0 : Number(limitDraft);
@@ -1790,46 +1795,52 @@ function KanbanBoardPage() {
                     </select>
                   )}
 
-                  <button
-                    type="button"
-                    className="kanban-tools-toggle"
-                    aria-expanded={toolsTaskId === task._id}
-                    onClick={() =>
-                      setToolsTaskId((open) => (open === task._id ? null : task._id))
-                    }
-                  >
-                    {toolsTaskId === task._id ? "Hide estimate & AI ▴" : "Estimate & AI ▾"}
-                  </button>
+                  {canEditPoints(task) && (
+                    <button
+                      type="button"
+                      className="kanban-tools-toggle"
+                      aria-expanded={toolsTaskId === task._id}
+                      onClick={() =>
+                        setToolsTaskId((open) => (open === task._id ? null : task._id))
+                      }
+                    >
+                      {toolsTaskId === task._id ? "Hide estimate & AI ▴" : "Estimate & AI ▾"}
+                    </button>
+                  )}
 
                   {toolsTaskId === task._id && projectId && (
                     <div className="kanban-tools-panel">
-                      <label className="kanban-tools-label">
-                        Story points
-                        <select
-                          value={task.storyPoints ?? 0}
-                          onChange={(e) =>
-                            setTaskPoints(task._id, Number(e.target.value) as StoryPointValue)
-                          }
-                        >
-                          {STORY_POINT_SCALE.map((points) => (
-                            <option key={points} value={points}>
-                              {points === 0 ? "Not estimated" : points}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      {canEditPoints(task) && (
+                        <>
+                          <label className="kanban-tools-label">
+                            Story points
+                            <select
+                              value={task.storyPoints ?? 0}
+                              onChange={(e) =>
+                                setTaskPoints(task._id, Number(e.target.value) as StoryPointValue)
+                              }
+                            >
+                              {STORY_POINT_SCALE.map((points) => (
+                                <option key={points} value={points}>
+                                  {points === 0 ? "Not estimated" : points}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
 
-                      <StoryPointEstimator
-                        projectId={projectId}
-                        title={task.title}
-                        description={task.description}
-                        priority={task.priority}
-                        taskId={task._id}
-                        savedStoryPoints={task.storyPoints}
-                        applyLabel="Save Estimate"
-                        appliedText={(points) => `Saved ${points} story points.`}
-                        onApply={(points) => saveTaskField(task._id, { storyPoints: points })}
-                      />
+                          <StoryPointEstimator
+                            projectId={projectId}
+                            title={task.title}
+                            description={task.description}
+                            priority={task.priority}
+                            taskId={task._id}
+                            savedStoryPoints={task.storyPoints}
+                            applyLabel="Save Estimate"
+                            appliedText={(points) => `Saved ${points} story points.`}
+                            onApply={(points) => saveTaskField(task._id, { storyPoints: points })}
+                          />
+                        </>
+                      )}
 
                       {/* Only managers and admins may change a task's priority. */}
                       {canAssignOthers && (

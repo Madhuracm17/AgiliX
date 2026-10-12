@@ -110,6 +110,18 @@ export class TasksController {
     }
     if (dto.assignee) await this.access.assertAssignee(projectId, dto.assignee);
 
+    // Story points: the person doing the task estimates it, and managers can
+    // adjust. Nobody else changes someone else's estimate. An unassigned task
+    // is estimated by a manager (or by whoever takes it on, once assigned).
+    if (dto.storyPoints !== undefined) {
+      const isPlanner = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN;
+      if (!isPlanner && assignee !== user.userId) {
+        throw new ForbiddenException(
+          'Only the person this task is assigned to, or a manager, can change its story points.',
+        );
+      }
+    }
+
     // Putting a task into a sprint has its own route, which also checks the sprint.
     if (dto.sprint) {
       throw new BadRequestException('Use "Add to sprint" to put a task into a sprint.');

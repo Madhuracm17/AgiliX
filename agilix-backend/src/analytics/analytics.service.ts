@@ -104,10 +104,13 @@ export class AnalyticsService {
 
   async getProjectSummary(projectId: string) {
     const objectId = new Types.ObjectId(projectId);
+    // The project id may be stored as an ObjectId or as plain text (the task
+    // list and workload match it as text), so both forms are matched here.
+    const project = { $in: [objectId, projectId] } as never;
 
-    const tasks = await this.taskModel.find({ project: objectId }).exec();
+    const tasks = await this.taskModel.find({ project }).exec();
     const timeEntries = await this.timeEntryModel
-      .find({ project: objectId, endTime: { $ne: null } })
+      .find({ project, endTime: { $ne: null } })
       .exec();
 
     const totalTasks = tasks.length;
@@ -127,7 +130,7 @@ export class AnalyticsService {
       inProgressTasks: count(TaskStatus.IN_PROGRESS) + count(TaskStatus.REVIEW),
       totalStoryPoints: points(tasks),
       completedStoryPoints: points(tasks.filter((t) => t.status === TaskStatus.DONE)),
-      sprintPace: await this.getSprintPace(objectId),
+      sprintPace: await this.getSprintPace(objectId, projectId),
     };
   }
 
@@ -137,10 +140,10 @@ export class AnalyticsService {
    * project has no active sprint (for example a Kanban project). This is plain
    * arithmetic, separate from the AI sprint risk.
    */
-  private async getSprintPace(projectId: Types.ObjectId): Promise<SprintPace | null> {
+  private async getSprintPace(objectId: Types.ObjectId, projectId: string): Promise<SprintPace | null> {
     const sprint: any = await this.projectModel.db
       .model('Sprint')
-      .findOne({ project: projectId, status: 'active' })
+      .findOne({ project: { $in: [objectId, projectId] }, status: 'active' })
       .lean()
       .exec();
     if (!sprint) return null;
