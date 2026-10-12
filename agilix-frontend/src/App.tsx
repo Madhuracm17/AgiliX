@@ -1611,7 +1611,7 @@ function KanbanBoardPage() {
     }
   };
 
-  // Editing a task's title, description (and, for managers, priority) on its card.
+  // Editing a task's title, description and priority on its card (managers and admins only).
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -1631,11 +1631,11 @@ function KanbanBoardPage() {
       alert("Please enter a task title.");
       return;
     }
-    // Only what changed is sent; priority only by managers (the backend checks too).
+    // Only what changed is sent. Managers only; the backend checks too.
     const changes: Partial<Pick<Task, "title" | "description" | "priority">> = {};
     if (newTitle !== task.title) changes.title = newTitle;
     if (editDescription.trim() !== (task.description ?? "")) changes.description = editDescription.trim();
-    if (canAssignOthers && editPriority !== task.priority) changes.priority = editPriority;
+    if (editPriority !== task.priority) changes.priority = editPriority;
     if (Object.keys(changes).length === 0) {
       setEditingId(null);
       return;
@@ -2100,17 +2100,15 @@ function KanbanBoardPage() {
                     rows={3}
                     onChange={(e) => setEditDescription(e.target.value)}
                   />
-                  {canAssignOthers && (
-                    <select
-                      aria-label="Priority"
-                      value={editPriority}
-                      onChange={(e) => setEditPriority(e.target.value as Task["priority"])}
-                    >
-                      <option value="low">Low priority</option>
-                      <option value="medium">Medium priority</option>
-                      <option value="high">High priority</option>
-                    </select>
-                  )}
+                  <select
+                    aria-label="Priority"
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as Task["priority"])}
+                  >
+                    <option value="low">Low priority</option>
+                    <option value="medium">Medium priority</option>
+                    <option value="high">High priority</option>
+                  </select>
                   <div className="kanban-edit-actions">
                     <button
                       type="button"
@@ -2254,10 +2252,10 @@ function KanbanBoardPage() {
                     </button>
                   )}
 
-                  {/* Edit (assignee or manager) and delete (same rules as Scrum). */}
-                  {editingId !== task._id && (canEditPoints(task) || canDelete(task)) && (
+                  {/* Edit (managers and admins) and delete (same rules as Scrum). */}
+                  {editingId !== task._id && (canAssignOthers || canDelete(task)) && (
                     <div className="kanban-card-actions">
-                      {canEditPoints(task) && task.status !== "done" && (
+                      {canAssignOthers && task.status !== "done" && (
                         <button type="button" className="kanban-tools-toggle" onClick={() => startEdit(task)}>
                           ✎ Edit
                         </button>

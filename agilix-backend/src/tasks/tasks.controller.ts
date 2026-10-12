@@ -110,15 +110,16 @@ export class TasksController {
     }
     if (dto.assignee) await this.access.assertAssignee(projectId, dto.assignee);
 
-    // Title and description: the person doing the task, or a manager, may
-    // correct them. Nobody else rewrites someone else's task.
+    // Title and description describe what was asked for, so only managers and
+    // admins change them (developers and testers need approval even to create
+    // a task). Others can leave a comment instead.
     if (dto.title !== undefined || dto.description !== undefined) {
-      const isPlanner = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN;
-      if (!isPlanner && assignee !== user.userId) {
-        throw new ForbiddenException(
-          'Only the person this task is assigned to, or a manager, can edit it.',
-        );
-      }
+      requireRole(
+        user,
+        'Only a manager can edit a task. Please ask a manager to change it.',
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+      );
       if (dto.title !== undefined && !dto.title.trim()) {
         throw new BadRequestException('The task title cannot be empty.');
       }
