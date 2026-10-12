@@ -203,7 +203,7 @@ export default function ReportsPage() {
             {viewedId
               ? `Tasks, sprint progress and tracked time${project ? ` on ${project.name}` : ""}.`
               : isTeamView
-                ? `${isKanban ? "Flow, cycle time and throughput" : "Sprint progress, velocity"} and team workload${project ? ` for ${project.name}` : " for this project"}.`
+                ? `${isKanban ? "Flow, cycle time, throughput" : "Sprint progress, velocity"} and team workload${project ? ` for ${project.name}` : " for this project"}.`
                 : "Your tasks, sprint progress and tracked time on this project."}
           </p>
         </div>
@@ -756,7 +756,7 @@ function KanbanReports({ projectId }: { projectId: string }) {
               <p>
                 in the last {report.days} days
                 {report.finishedWithoutStart > 0 &&
-                  ` · ${report.finishedWithoutStart} skipped In Progress (not in cycle time)`}
+                  ` · ${report.finishedWithoutStart} with no recorded In Progress start (left out of cycle time)`}
               </p>
             </div>
           </div>
