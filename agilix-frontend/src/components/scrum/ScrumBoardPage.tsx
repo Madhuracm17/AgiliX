@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { usePendingDeletes } from "../approvals/usePendingDeletes";
@@ -13,6 +13,7 @@ import {
   type Task,
   type TaskStatus,
 } from "../../api/tasks";
+import KanbanDndBoard from "../kanban/KanbanDndBoard";
 import SprintDetails from "../sprints/SprintDetails";
 import SprintProgress from "../sprints/SprintProgress";
 import SprintStatusBadge from "../sprints/SprintStatusBadge";
@@ -89,9 +90,6 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   const focusedSprintFor = useRef<string | null>(null);
 
   const [movingToBacklogId, setMovingToBacklogId] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState<TaskStatus | null>(null);
-  // The card being dragged, so only its next column accepts the drop.
-  const [draggingTask, setDraggingTask] = useState<Task | null>(null);
 
   const loadSprints = async () => {
     if (!projectId) return;
@@ -330,30 +328,203 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
     }
   };
 
-  // ---- drag and drop: a card can only be dropped on its next column ----
-  const onDragStart = (event: DragEvent, task: Task) => {
-    event.dataTransfer.setData("text/plain", task._id);
-    event.dataTransfer.effectAllowed = "move";
-    setDraggingTask(task);
-  };
-
-  const onDragEnd = () => {
-    setDraggingTask(null);
-    setDragOver(null);
-  };
-
-  const canDropOn = (status: TaskStatus) =>
+  // ---- drag and drop (same board component as Kanban) ----
+  // A card is dragged by its assignee (Review cards by a tester, manager or admin) and
+  // can only be dropped on the next column. The backend enforces the same rules.
+  const canDrag = (task: Task) =>
     !sprintIsLocked &&
-    draggingTask !== null &&
-    nextStatus(draggingTask.status) === status &&
-    canMove(draggingTask, status);
+    task.status !== "done" &&
+    (task.status === "review" ? signOff : isAssignee(task));
 
-  const onDrop = (event: DragEvent, status: TaskStatus) => {
-    event.preventDefault();
-    const task = draggingTask;
-    onDragEnd();
-    if (task) moveTask(task._id, status);
-  };
+  const canDropOn = (task: Task, status: string) =>
+    !sprintIsLocked &&
+    nextStatus(task.status) === status &&
+    canMove(task, status as TaskStatus);
+
+  // One card's content. The card itself (its frame, dragging) comes from KanbanDndBoard.
+  // `overlay` is the copy that follows the pointer, so it leaves out the controls and
+  // anything that should exist once per task (the time tracker, the highlight id).
+  const renderCard = (task: Task, overlay: boolean) => (
+    <div
+      id={overlay ? undefined : `task-card-${task._id}`}
+      className={`scrum-card-inner ${!overlay && highlightId === task._id ? "scrum-card-highlight" : ""}`}
+    >
+      <div className="scrum-tags">
+        <span className={`scrum-tag scrum-tag-${task.priority}`}>
+          {priorityLabel(task.priority)}
+        </span>
+        {task.type && (
+          <span className="scrum-tag">{typeLabel(task.type)}</span>
+        )}
+      </div>
+
+      <h3 className={task.status === "done" ? "scrum-done" : ""}>
+        {task.title}
+      </h3>
+      {task.description && (
+        <p className="scrum-summary">{task.description}</p>
+      )}
+
+      {/* What the tester asked to fix, while the task is back in progress. */}
+      {task.reviewNote && task.status === "in_progress" && (
+        <p className="scrum-review-note">
+          <strong>Sent back by {task.reviewNote.byName || "a tester"}</strong>
+          {task.reviewNote.text}
+        </p>
+      )}
+
+      <div className="scrum-card-footer">
+        <span>{task.storyPoints ?? 0} pts</span>
+        <span
+          className={`scrum-avatar ${
+            task.assignee ? "" : "scrum-avatar-empty"
+          }`}
+          title={task.assignee?.name ?? "Unassigned"}
+        >
+          {task.assignee ? initials(task.assignee.name) : "?"}
+        </span>
+      </div>
+
+      {!overlay && canReassign && !sprintIsLocked && (
+        <select
+          className="scrum-assignee-select"
+          aria-label={`Assignee of ${task.title}`}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          value={task.assignee?._id ?? ""}
+          onChange={(e) => reassign(task, e.target.value)}
+        >
+          <option value="">Unassigned</option>
+          {people.map((person) => (
+            <option key={person._id} value={person._id}>
+              {personLabel(person, user._id)}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {!overlay && renderTaskTools?.(task)}
+
+      {!overlay && !sprintIsLocked && (
+        <div className="scrum-card-actions">
+          {task.status === "review" && !signOff ? (
+            <p className="scrum-card-final scrum-card-waiting">
+              Waiting for a tester to sign off
+            </p>
+          ) : task.status !== "review" && task.status !== "done" && !isAssignee(task) ? (
+            // Someone else's task: no button and no explanation needed.
+            task.assignee ? null : (
+              <p className="scrum-card-final scrum-card-waiting">
+                Assign this task before moving it
+              </p>
+            )
+          ) : nextStatus(task.status) ? (
+            <button
+              type="button"
+              className="scrum-move-button"
+              onClick={() => {
+                const next = nextStatus(task.status);
+                if (next) moveTask(task._id, next);
+              }}
+            >
+              Move to {statusLabel(nextStatus(task.status) ?? task.status)} →
+            </button>
+          ) : (
+            <p className="scrum-card-final">✓ Done</p>
+          )}
+
+          {/* A tester can send work back from Review, with a comment. */}
+          {task.status === "review" && signOff && (
+            bouncingId === task._id ? (
+              <div
+                className="scrum-bounce"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                <textarea
+                  aria-label={`What needs to be fixed in ${task.title}`}
+                  placeholder="What needs to be fixed?"
+                  value={bounceText}
+                  maxLength={1000}
+                  onChange={(e) => setBounceText(e.target.value)}
+                />
+                <div className="scrum-bounce-actions">
+                  <button
+                    type="button"
+                    className="scrum-bounce-button"
+                    disabled={bounceBusy}
+                    onClick={() => sendBack(task)}
+                  >
+                    {bounceBusy ? "Sending…" : "Send back"}
+                  </button>
+                  <button
+                    type="button"
+                    className="sprint-card-backlog-button"
+                    disabled={bounceBusy}
+                    onClick={() => {
+                      setBouncingId(null);
+                      setBounceText("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="scrum-bounce-button"
+                onClick={() => {
+                  setBouncingId(task._id);
+                  setBounceText("");
+                }}
+              >
+                ↩ Found a bug? Send back
+              </button>
+            )
+          )}
+
+          {/* Only work that hasn't reached Review can go back to the backlog. */}
+          {(task.status === "todo" || task.status === "in_progress") &&
+            (!task.assignee || isAssignee(task)) && (
+            <button
+              type="button"
+              className="sprint-card-backlog-button"
+              onClick={() => moveToBacklog(task)}
+              disabled={movingToBacklogId === task._id}
+            >
+              {movingToBacklogId === task._id
+                ? "Moving…"
+                : "↩ Back to backlog"}
+            </button>
+          )}
+
+          {/* Managers and admins can delete any unfinished task.
+              Developers and testers can only ask for a task that is still in To Do. */}
+          {(canReassign ? task.status !== "done" : task.status === "todo") && (
+            <button
+              type="button"
+              className="task-delete-button"
+              onClick={() => removeTask(task)}
+              disabled={
+                !canReassign &&
+                (pendingDeleteIds.has(task._id) || declinedDeleteIds.has(task._id))
+              }
+            >
+              {canReassign
+                ? "Delete task"
+                : declinedDeleteIds.has(task._id)
+                  ? "Deletion declined"
+                  : pendingDeleteIds.has(task._id)
+                    ? "Deletion requested"
+                    : "Request deletion"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
 
   const inProgressCount = (stats?.inProgress ?? 0) + (stats?.review ?? 0);
   const inProgressPoints = sprintTasks
@@ -538,222 +709,15 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
             </p>
           )}
 
-          <div className="scrum-board">
-            {SCRUM_COLUMNS.map((column) => {
-              const columnTasks = visibleTasks.filter((t) => t.status === column.key);
-
-              return (
-                <div
-                  key={column.key}
-                  className={`scrum-column ${
-                    dragOver === column.key ? "scrum-column-over" : ""
-                  }`}
-                  onDragOver={(e) => {
-                    // Not calling preventDefault() = the browser refuses the drop.
-                    if (!canDropOn(column.key)) return;
-                    e.preventDefault();
-                    setDragOver(column.key);
-                  }}
-                  onDragLeave={() => setDragOver(null)}
-                  onDrop={(e) => onDrop(e, column.key)}
-                >
-                  <div className="scrum-column-header">
-                    <span>{column.label}</span>
-                    <span className="scrum-column-count">{columnTasks.length}</span>
-                  </div>
-
-                  <div className="scrum-column-body">
-                    {columnTasks.length === 0 && (
-                      <p className="scrum-empty">No tasks here</p>
-                    )}
-
-                    {columnTasks.map((task) => (
-                      <div
-                        key={task._id}
-                        id={`task-card-${task._id}`}
-                        className={`scrum-card ${highlightId === task._id ? "scrum-card-highlight" : ""}`}
-                        draggable={
-                          !sprintIsLocked &&
-                          task.status !== "done" &&
-                          (task.status === "review" ? signOff : isAssignee(task))
-                        }
-                        onDragStart={(e) => onDragStart(e, task)}
-                        onDragEnd={onDragEnd}
-                      >
-                        <div className="scrum-tags">
-                          <span className={`scrum-tag scrum-tag-${task.priority}`}>
-                            {priorityLabel(task.priority)}
-                          </span>
-                          {task.type && (
-                            <span className="scrum-tag">{typeLabel(task.type)}</span>
-                          )}
-                        </div>
-
-                        <h3 className={task.status === "done" ? "scrum-done" : ""}>
-                          {task.title}
-                        </h3>
-                        {task.description && (
-                          <p className="scrum-summary">{task.description}</p>
-                        )}
-
-                        {/* What the tester asked to fix, while the task is back in progress. */}
-                        {task.reviewNote && task.status === "in_progress" && (
-                          <p className="scrum-review-note">
-                            <strong>Sent back by {task.reviewNote.byName || "a tester"}</strong>
-                            {task.reviewNote.text}
-                          </p>
-                        )}
-
-                        <div className="scrum-card-footer">
-                          <span>{task.storyPoints ?? 0} pts</span>
-                          <span
-                            className={`scrum-avatar ${
-                              task.assignee ? "" : "scrum-avatar-empty"
-                            }`}
-                            title={task.assignee?.name ?? "Unassigned"}
-                          >
-                            {task.assignee ? initials(task.assignee.name) : "?"}
-                          </span>
-                        </div>
-
-                        {canReassign && !sprintIsLocked && (
-                          <select
-                            className="scrum-assignee-select"
-                            aria-label={`Assignee of ${task.title}`}
-                            value={task.assignee?._id ?? ""}
-                            onChange={(e) => reassign(task, e.target.value)}
-                          >
-                            <option value="">Unassigned</option>
-                            {people.map((person) => (
-                              <option key={person._id} value={person._id}>
-                                {personLabel(person, user._id)}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-
-                        {renderTaskTools?.(task)}
-
-                        {!sprintIsLocked && (
-                          <div className="scrum-card-actions">
-                            {task.status === "review" && !signOff ? (
-                              <p className="scrum-card-final scrum-card-waiting">
-                                Waiting for a tester to sign off
-                              </p>
-                            ) : task.status !== "review" && task.status !== "done" && !isAssignee(task) ? (
-                              // Someone else's task: no button and no explanation needed.
-                              task.assignee ? null : (
-                                <p className="scrum-card-final scrum-card-waiting">
-                                  Assign this task before moving it
-                                </p>
-                              )
-                            ) : nextStatus(task.status) ? (
-                              <button
-                                type="button"
-                                className="scrum-move-button"
-                                onClick={() => {
-                                  const next = nextStatus(task.status);
-                                  if (next) moveTask(task._id, next);
-                                }}
-                              >
-                                Move to {statusLabel(nextStatus(task.status) ?? task.status)} →
-                              </button>
-                            ) : (
-                              <p className="scrum-card-final">✓ Done</p>
-                            )}
-
-                            {/* A tester can send work back from Review, with a comment. */}
-                            {task.status === "review" && signOff && (
-                              bouncingId === task._id ? (
-                                <div className="scrum-bounce">
-                                  <textarea
-                                    aria-label={`What needs to be fixed in ${task.title}`}
-                                    placeholder="What needs to be fixed?"
-                                    value={bounceText}
-                                    maxLength={1000}
-                                    onChange={(e) => setBounceText(e.target.value)}
-                                  />
-                                  <div className="scrum-bounce-actions">
-                                    <button
-                                      type="button"
-                                      className="scrum-bounce-button"
-                                      disabled={bounceBusy}
-                                      onClick={() => sendBack(task)}
-                                    >
-                                      {bounceBusy ? "Sending…" : "Send back"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="sprint-card-backlog-button"
-                                      disabled={bounceBusy}
-                                      onClick={() => {
-                                        setBouncingId(null);
-                                        setBounceText("");
-                                      }}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="scrum-bounce-button"
-                                  onClick={() => {
-                                    setBouncingId(task._id);
-                                    setBounceText("");
-                                  }}
-                                >
-                                  ↩ Found a bug? Send back
-                                </button>
-                              )
-                            )}
-
-                            {/* Only work that hasn't reached Review can go back to the backlog. */}
-                            {(task.status === "todo" || task.status === "in_progress") &&
-                              (!task.assignee || isAssignee(task)) && (
-                              <button
-                                type="button"
-                                className="sprint-card-backlog-button"
-                                onClick={() => moveToBacklog(task)}
-                                disabled={movingToBacklogId === task._id}
-                              >
-                                {movingToBacklogId === task._id
-                                  ? "Moving…"
-                                  : "↩ Back to backlog"}
-                              </button>
-                            )}
-
-                            {/* Managers and admins can delete any unfinished task.
-                                Developers and testers can only ask for a task that is still in To Do. */}
-                            {(canReassign ? task.status !== "done" : task.status === "todo") && (
-                              <button
-                                type="button"
-                                className="task-delete-button"
-                                onClick={() => removeTask(task)}
-                                disabled={
-                                  !canReassign &&
-                                  (pendingDeleteIds.has(task._id) || declinedDeleteIds.has(task._id))
-                                }
-                              >
-                                {canReassign
-                                  ? "Delete task"
-                                  : declinedDeleteIds.has(task._id)
-                                    ? "Deletion declined"
-                                    : pendingDeleteIds.has(task._id)
-                                      ? "Deletion requested"
-                                      : "Request deletion"}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <KanbanDndBoard
+            classPrefix="scrum"
+            columns={SCRUM_COLUMNS}
+            tasks={visibleTasks}
+            canDrag={canDrag}
+            canDrop={canDropOn}
+            onMove={(taskId, status) => moveTask(taskId, status as TaskStatus)}
+            renderCard={renderCard}
+          />
         </>
       )}
     </div>

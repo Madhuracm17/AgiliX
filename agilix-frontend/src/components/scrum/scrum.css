@@ -691,3 +691,39 @@
 .task-delete-button:disabled:hover {
   background: #fff;
 }
+
+/* ---- Drag and drop on the board (shared with Kanban) ---- */
+
+/* The card frame comes from the drag-and-drop board; its content sits in this wrapper. */
+.scrum-card-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Only cards that can be picked up show the grab cursor. */
+.scrum-card:not(.kanban-card-draggable) {
+  cursor: default;
+}
+
+.scrum-card-inner select,
+.scrum-card-inner textarea {
+  cursor: auto;
+}
+
+/* Empty columns stay tall enough to drop into. */
+.scrum-column-body {
+  min-height: 120px;
+}
+
+/* The column under the dragged card (kanban.css sets the same for Kanban). */
+.scrum-column.kanban-column-over {
+  border-color: #829172;
+  background: #f1f4ed;
+}
+
+/* The copy that follows the pointer is not inside a column, so give it the card look. */
+.scrum-card.kanban-card-overlay {
+  width: auto;
+}
