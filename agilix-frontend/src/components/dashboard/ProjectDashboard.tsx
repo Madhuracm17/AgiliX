@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { getTasks, type Task } from "../../api/tasks";
 import { getSprints, type Sprint } from "../../api/sprints";
 import { getSprintRisk, type SprintRisk } from "../../api/ai";
 import { useAuth } from "../../auth/auth-context";
-import SprintProgress from "../sprints/SprintProgress";
 import {
   daysLeft,
   greeting,
@@ -23,22 +22,69 @@ function firstSentence(text: string): string {
   return match ? match[0] : clean;
 }
 
+type DashProject = {
+  _id: string;
+  name: string;
+  methodology?: "scrum" | "kanban";
+  /** Kanban only: most tasks allowed In Progress (0 or missing = no limit). */
+  wipLimit?: number;
+};
+
 interface ProjectDashboardProps {
   /** Every project the signed-in person belongs to. */
-  projects: { _id: string; name: string; methodology?: "scrum" | "kanban" }[];
+  projects: DashProject[];
 }
 
 interface Activity {
   key: string;
   text: string;
   at: string;
+  /** The task this line is about, so clicking it can open the task. */
+  task?: Task;
+  /** The project this line belongs to (for sprint lines). */
+  projectId?: string;
 }
 
+type StatusFilter = "all" | "todo" | "in_progress" | "review" | "done";
+type MyTab = "open" | "done";
+
+const STATUS_NAMES: Record<Task["status"], string> = {
+  todo: "To Do",
+  in_progress: "In Progress",
+  review: "Review",
+  done: "Done",
+};
+
 /**
- * Dashboard (Figma "Dashboard" screen), the first page after login. It adds up
- * the person's projects: task totals, sprint health for the active sprint,
- * recent activity and their own tasks. The AI confidence figure comes from the
- * existing AI sprint-risk endpoint and is only requested when the user asks.
+ * Status colors, the same as the Kanban flow chart (checked for color-blind
+ * separation). Every bar segment also has its name in the legend and tooltip.
+ */
+const STATUS_COLORS: Record<Task["status"], string> = {
+  todo: "#5b7fc4",
+  in_progress: "#c9961a",
+  review: "#8c62b8",
+  done: "#3f8a4a",
+};
+
+const STATUS_ORDER: Task["status"][] = ["done", "review", "in_progress", "todo"];
+
+/** Lets a clickable row work with Enter and Space as well as the mouse. */
+const onActivate = (action: () => void) => (e: KeyboardEvent) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    action();
+  }
+};
+
+/**
+ * Dashboard, the first page after login. It adds up the person's projects,
+ * Scrum and Kanban alike:
+ * - status tiles that also filter the task list below,
+ * - one health card per project (the active sprint for Scrum, the flow and
+ *   WIP limit for Kanban), each opening its board,
+ * - recent activity and the person's own tasks, each opening the task.
+ * A project picker narrows everything to one project. The AI sprint estimate
+ * comes from the existing sprint-risk endpoint and is only requested on click.
  */
 export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
   const navigate = useNavigate();
@@ -52,9 +98,14 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [risk, setRisk] = useState<SprintRisk | null>(null);
-  const [checkingRisk, setCheckingRisk] = useState(false);
-  const [riskError, setRiskError] = useState("");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [myTab, setMyTab] = useState<MyTab>("open");
+
+  // AI sprint estimates, per sprint, only when someone asks.
+  const [risks, setRisks] = useState<Record<string, SprintRisk>>({});
+  const [checkingSprint, setCheckingSprint] = useState<string | null>(null);
+  const [riskErrors, setRiskErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +117,8 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
         const results = await Promise.all(
           projects.map(async (project) => ({
             tasks: await getTasks(project._id),
-            sprints: await getSprints(project._id),
+            // Kanban projects have no sprints.
+            sprints: project.methodology === "kanban" ? [] : await getSprints(project._id),
           })),
         );
         if (cancelled) return;
@@ -85,55 +137,38 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
     };
   }, [projectKey]);
 
-  const activeSprint = sprints.find((s) => s.status === "active") ?? null;
+  const projectOf = (task: Task) => projects.find((p) => sameId(p._id, task.project));
+  const isKanban = (p: DashProject | undefined) => (p?.methodology ?? "scrum") === "kanban";
 
-  const sprintTasks = useMemo(
-    () =>
-      activeSprint ? tasks.filter((t) => sameId(t.sprint, activeSprint._id)) : [],
-    [tasks, activeSprint]
+  // Everything below follows the project picker.
+  const shownProjects = projectFilter === "all" ? projects : projects.filter((p) => p._id === projectFilter);
+  const shownTasks = useMemo(
+    () => (projectFilter === "all" ? tasks : tasks.filter((t) => sameId(t.project, projectFilter))),
+    [tasks, projectFilter],
+  );
+  const shownSprints = useMemo(
+    () => (projectFilter === "all" ? sprints : sprints.filter((s) => sameId(s.project, projectFilter))),
+    [sprints, projectFilter],
   );
 
+  const count = (status: Task["status"]) => shownTasks.filter((t) => t.status === status).length;
   const counts = {
-    total: tasks.length,
-    done: tasks.filter((t) => t.status === "done").length,
-    inProgress: tasks.filter(
-      (t) => t.status === "in_progress" || t.status === "review"
-    ).length,
+    all: shownTasks.length,
+    todo: count("todo"),
+    in_progress: count("in_progress"),
+    review: count("review"),
+    done: count("done"),
   };
 
-  const sprintDone = sprintTasks.filter((t) => t.status === "done");
-  const sprintActive = sprintTasks.filter(
-    (t) => t.status === "in_progress" || t.status === "review"
-  );
-  const points = (list: Task[]) =>
-    list.reduce((sum, t) => sum + (t.storyPoints ?? 0), 0);
+  const activity = useMemo(() => buildActivity(shownTasks, shownSprints), [shownTasks, shownSprints]);
 
-  const activity = useMemo(() => buildActivity(tasks, sprints), [tasks, sprints]);
+  const activeSprintOf = (projectId: string) =>
+    sprints.find((s) => sameId(s.project, projectId) && s.status === "active") ?? null;
 
-  // My tasks: everything assigned to me in this project. Unfinished first,
-  // then tasks in the active sprint, then highest priority.
-  const myTasks = useMemo(() => {
-    const rank = { high: 0, medium: 1, low: 2 } as const;
-    const inActive = (t: Task) =>
-      activeSprint && sameId(t.sprint, activeSprint._id) ? 0 : 1;
-    return tasks
-      .filter((t) => sameId(t.assignee, user._id))
-      .sort((a, b) => {
-        const doneA = a.status === "done" ? 1 : 0;
-        const doneB = b.status === "done" ? 1 : 0;
-        if (doneA !== doneB) return doneA - doneB;
-        if (inActive(a) !== inActive(b)) return inActive(a) - inActive(b);
-        return rank[a.priority] - rank[b.priority];
-      })
-      .slice(0, 6);
-  }, [tasks, user._id, activeSprint]);
-
-  // Where clicking a task in "My Tasks" goes: the board of its sprint with that task
-  // highlighted, the backlog with the task open, or the Kanban board.
+  // Where a task opens: its Kanban board, its sprint on the Scrum board, or the backlog.
   const openTask = (task: Task) => {
     const projectId = typeof task.project === "string" ? task.project : String(task.project);
-    const project = projects.find((p) => sameId(p._id, projectId));
-    if ((project?.methodology ?? "scrum") === "kanban") {
+    if (isKanban(projectOf(task))) {
       navigate(`/projects/${projectId}/kanban`);
     } else if (task.sprint) {
       navigate(`/projects/${projectId}/sprints?task=${task._id}`);
@@ -142,26 +177,61 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
     }
   };
 
+  const openBoard = (project: DashProject) =>
+    navigate(`/projects/${project._id}/${isKanban(project) ? "kanban" : "sprints"}`);
+
   // Where a task sits, shown under its title.
   const taskPlace = (task: Task) => {
-    if (activeSprint && sameId(task.sprint, activeSprint._id)) {
-      return `Sprint ends in ${daysLeft(activeSprint.endDate)} days`;
+    const project = projectOf(task);
+    const name = project?.name ? `${project.name} · ` : "";
+    if (isKanban(project)) return `${name}${STATUS_NAMES[task.status]}`;
+    const active = project ? activeSprintOf(project._id) : null;
+    if (active && sameId(task.sprint, active._id)) {
+      return `${name}Sprint ends in ${daysLeft(active.endDate)} days`;
     }
     const sprint = sprints.find((s) => sameId(task.sprint, s._id));
-    return sprint ? label(sprint) : "In the backlog";
+    return `${name}${sprint ? label(sprint) : "In the backlog"}`;
   };
 
-  const checkConfidence = async () => {
-    if (!activeSprint || checkingRisk) return;
+  // My tasks: assigned to me. Open work first (highest priority first), or what I finished.
+  const myTasks = useMemo(() => {
+    const rank = { high: 0, medium: 1, low: 2 } as const;
+    const flow = { review: 0, in_progress: 1, todo: 2, done: 3 } as const;
+    return shownTasks
+      .filter((t) => sameId(t.assignee, user._id))
+      .filter((t) => (myTab === "done" ? t.status === "done" : t.status !== "done"))
+      .sort((a, b) =>
+        myTab === "done"
+          ? new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()
+          : flow[a.status] - flow[b.status] || rank[a.priority] - rank[b.priority],
+      )
+      .slice(0, 6);
+  }, [shownTasks, user._id, myTab]);
+  const myOpenCount = shownTasks.filter((t) => sameId(t.assignee, user._id) && t.status !== "done").length;
+  const myDoneCount = shownTasks.filter((t) => sameId(t.assignee, user._id) && t.status === "done").length;
+
+  // The task list the status tiles filter.
+  const filteredTasks = useMemo(() => {
+    const flow = { review: 0, in_progress: 1, todo: 2, done: 3 } as const;
+    return shownTasks
+      .filter((t) => statusFilter === "all" || t.status === statusFilter)
+      .sort((a, b) => flow[a.status] - flow[b.status])
+      .slice(0, 8);
+  }, [shownTasks, statusFilter]);
+  const filteredTotal =
+    statusFilter === "all" ? shownTasks.length : shownTasks.filter((t) => t.status === statusFilter).length;
+
+  const checkConfidence = async (sprint: Sprint) => {
+    if (checkingSprint) return;
     try {
-      setCheckingRisk(true);
-      setRiskError("");
-      setRisk(await getSprintRisk(activeSprint._id));
+      setCheckingSprint(sprint._id);
+      setRiskErrors((prev) => ({ ...prev, [sprint._id]: "" }));
+      const risk = await getSprintRisk(sprint._id);
+      setRisks((prev) => ({ ...prev, [sprint._id]: risk }));
     } catch (err) {
-      setRisk(null);
-      setRiskError(readError(err, "AI prediction failed. Please try again."));
+      setRiskErrors((prev) => ({ ...prev, [sprint._id]: readError(err, "AI prediction failed. Please try again.") }));
     } finally {
-      setCheckingRisk(false);
+      setCheckingSprint(null);
     }
   };
 
@@ -171,8 +241,14 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
       sprint,
       sprints.filter((s) => sameId(s.project, sprint.project)),
     );
-  const projectName = (sprint: Sprint) =>
-    projects.find((p) => sameId(sprint.project, p._id))?.name;
+
+  const tiles: { key: StatusFilter; label: string; value: number }[] = [
+    { key: "all", label: "Total Tasks", value: counts.all },
+    { key: "todo", label: "To Do", value: counts.todo },
+    { key: "in_progress", label: "In Progress", value: counts.in_progress },
+    { key: "review", label: "In Review", value: counts.review },
+    { key: "done", label: "Completed", value: counts.done },
+  ];
 
   return (
     <div className="dash">
@@ -184,9 +260,26 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
           </p>
         </div>
 
-        <button className="secondary-button" onClick={() => navigate("/projects")}>
-          All Projects
-        </button>
+        <div className="dash-header-actions">
+          {projects.length > 1 && (
+            <select
+              className="dash-select"
+              aria-label="Show one project"
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+            >
+              <option value="all">Showing: every project</option>
+              {projects.map((p) => (
+                <option key={p._id} value={p._id}>
+                  Showing: {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button className="secondary-button" onClick={() => navigate("/projects")}>
+            All Projects
+          </button>
+        </div>
       </div>
 
       {loading && (
@@ -204,102 +297,109 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
 
       {!loading && !error && (
         <>
-          <div className="dash-stats">
-            <StatTile label="Total Task" value={counts.total} />
-            <StatTile label="Completed" value={counts.done} />
-            <StatTile label="In Progress" value={counts.inProgress} />
+          {/* Status tiles: click one to list those tasks below. */}
+          <div className="dash-stats dash-stats-five" role="group" aria-label="Filter tasks by status">
+            {tiles.map((tile) => (
+              <button
+                key={tile.key}
+                type="button"
+                className={`dash-stat dash-stat-button ${statusFilter === tile.key ? "active" : ""}`}
+                aria-pressed={statusFilter === tile.key}
+                onClick={() => setStatusFilter(tile.key)}
+              >
+                <span>
+                  {tile.key !== "all" && (
+                    <i className="dash-dot" style={{ background: STATUS_COLORS[tile.key] }} aria-hidden="true" />
+                  )}
+                  {tile.label}
+                </span>
+                <strong>{tile.value}</strong>
+              </button>
+            ))}
           </div>
 
+          {/* One health card per project. */}
           <section className="dash-panel">
             <div className="dash-panel-header">
-              <h2>Sprint Health</h2>
-              {activeSprint && (
-                <span className="dash-sprint-name">
-                  {[projectName(activeSprint), label(activeSprint)].filter(Boolean).join(" · ")}
-                </span>
-              )}
+              <h2>Project Health</h2>
+              <span className="dash-panel-sub">Click a project to open its board</span>
             </div>
 
-            {!activeSprint ? (
-              <div className="dash-empty">
-                <p>No active sprint right now.</p>
-                {user.role === "manager" && (
-                  <button className="secondary-button" onClick={() => navigate("/projects")}>
-                    Open All Projects
-                  </button>
-                )}
-              </div>
+            <div className="dash-projects">
+              {shownProjects.map((project) => (
+                <ProjectHealthCard
+                  key={project._id}
+                  project={project}
+                  tasks={tasks.filter((t) => sameId(t.project, project._id))}
+                  activeSprint={activeSprintOf(project._id)}
+                  sprintName={(s) => label(s)}
+                  showAi={!isAdmin}
+                  risk={(s) => risks[s._id]}
+                  riskError={(s) => riskErrors[s._id]}
+                  checking={(s) => checkingSprint === s._id}
+                  onCheck={checkConfidence}
+                  onOpen={() => openBoard(project)}
+                />
+              ))}
+            </div>
+
+            <ul className="dash-legend" aria-label="Colors">
+              {(["todo", "in_progress", "review", "done"] as Task["status"][]).map((s) => (
+                <li key={s}>
+                  <i className="dash-dot" style={{ background: STATUS_COLORS[s] }} aria-hidden="true" />
+                  {STATUS_NAMES[s]}
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="dash-panel dash-panel-spaced">
+            <div className="dash-panel-header">
+              <h2>
+                {statusFilter === "all" ? "All tasks" : `${tiles.find((t) => t.key === statusFilter)?.label} tasks`}
+              </h2>
+              <span className="dash-panel-sub">
+                {filteredTotal > filteredTasks.length
+                  ? `Showing ${filteredTasks.length} of ${filteredTotal}`
+                  : `${filteredTotal} ${filteredTotal === 1 ? "task" : "tasks"}`}
+              </span>
+              {statusFilter !== "all" && (
+                <button type="button" className="dash-link dash-clear" onClick={() => setStatusFilter("all")}>
+                  Show all
+                </button>
+              )}
+            </div>
+            {filteredTasks.length === 0 ? (
+              <p className="dash-muted">No tasks here.</p>
             ) : (
-              <>
-                {activeSprint.goal && (
-                  <p className="dash-goal">Goal: {activeSprint.goal}</p>
-                )}
-
-                {sprintTasks.length > 0 ? (
-                  <SprintProgress
-                    totalTasks={sprintTasks.length}
-                    doneTasks={sprintDone.length}
-                    inProgressTasks={sprintActive.length}
-                    totalStoryPoints={points(sprintTasks)}
-                    completedStoryPoints={points(sprintDone)}
-                    inProgressStoryPoints={points(sprintActive)}
-                  />
-                ) : (
-                  <p className="dash-muted">
-                    No tasks in this sprint yet. Add some from the Product Backlog.
-                  </p>
-                )}
-
-                <div className="dash-stats">
-                  <StatTile
-                    label="Remaining Task"
-                    value={sprintTasks.length - sprintDone.length}
-                  />
-                  <StatTile label="Days Left" value={daysLeft(activeSprint.endDate)} />
-                  {!isAdmin && (
-                    <div className="dash-stat">
-                      <span>Expected Completion</span>
-                      {risk ? (
-                        <strong className={`dash-risk dash-risk-${risk.risk}`}>
-                          {risk.completionForecastPercent}%
-                        </strong>
-                      ) : (
-                        <button
-                          type="button"
-                          className="dash-link dash-check"
-                          onClick={checkConfidence}
-                          disabled={checkingRisk}
-                        >
-                          {checkingRisk ? "Checking…" : "View Estimate"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {!isAdmin && risk && (
-                  <p className="dash-muted dash-ai-line">
-                    <span className="dash-ai-text" title={risk.reasoning}>
-                      <strong>AI estimate:</strong> {firstSentence(risk.reasoning)}
+              <ul className="dash-task-table">
+                {filteredTasks.map((task) => (
+                  <li
+                    key={task._id}
+                    className="dash-task-link"
+                    role="link"
+                    tabIndex={0}
+                    title="Open this task"
+                    onClick={() => openTask(task)}
+                    onKeyDown={onActivate(() => openTask(task))}
+                  >
+                    <span className="dash-status-pill" style={{ borderColor: STATUS_COLORS[task.status] }}>
+                      <i className="dash-dot" style={{ background: STATUS_COLORS[task.status] }} aria-hidden="true" />
+                      {STATUS_NAMES[task.status]}
                     </span>
-                    <button
-                      type="button"
-                      className="dash-link"
-                      onClick={checkConfidence}
-                      disabled={checkingRisk}
-                    >
-                      {checkingRisk ? "Checking…" : "Check again"}
-                    </button>
-                  </p>
-                )}
-                {!isAdmin && riskError && (
-                  <p className="dash-error" role="alert">
-                    {riskError}
-                  </p>
-                )}
-              </>
+                    <strong className={task.status === "done" ? "dash-done" : ""}>{task.title}</strong>
+                    <span className="dash-task-meta">
+                      {projectOf(task)?.name ?? ""}
+                      {task.assignee ? ` · ${task.assignee.name}` : " · Unassigned"}
+                    </span>
+                    <span className={`dash-badge dash-badge-${task.priority}`}>{priorityLabel(task.priority)}</span>
+                  </li>
+                ))}
+              </ul>
             )}
+          </section>
 
+          <section className="dash-panel dash-panel-spaced">
             <div className="dash-columns">
               <div className="dash-card">
                 <h3>Recent Activity</h3>
@@ -307,19 +407,55 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                   <p className="dash-muted">Nothing has happened yet.</p>
                 ) : (
                   <ul className="dash-activity">
-                    {activity.map((item) => (
-                      <li key={item.key}>
-                        {item.text} <span>— {timeAgo(item.at)}</span>
-                      </li>
-                    ))}
+                    {activity.map((item) => {
+                      const open = item.task
+                        ? () => openTask(item.task as Task)
+                        : item.projectId
+                          ? () => navigate(`/projects/${item.projectId}/sprints`)
+                          : null;
+                      return (
+                        <li
+                          key={item.key}
+                          className={open ? "dash-activity-link" : undefined}
+                          role={open ? "link" : undefined}
+                          tabIndex={open ? 0 : undefined}
+                          onClick={open ?? undefined}
+                          onKeyDown={open ? onActivate(open) : undefined}
+                        >
+                          {item.text} <span>— {timeAgo(item.at)}</span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
 
               <div className="dash-card">
-                <h3>My Tasks Today</h3>
+                <h3>My Tasks</h3>
+                <div className="dash-tabs" role="tablist" aria-label="My tasks">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={myTab === "open"}
+                    className={myTab === "open" ? "active" : ""}
+                    onClick={() => setMyTab("open")}
+                  >
+                    To do ({myOpenCount})
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={myTab === "done"}
+                    className={myTab === "done" ? "active" : ""}
+                    onClick={() => setMyTab("done")}
+                  >
+                    Finished ({myDoneCount})
+                  </button>
+                </div>
                 {myTasks.length === 0 ? (
-                  <p className="dash-muted">Tasks assigned to you will appear here.</p>
+                  <p className="dash-muted">
+                    {myTab === "open" ? "Nothing open. Tasks assigned to you will appear here." : "Nothing finished yet."}
+                  </p>
                 ) : (
                   <ul className="dash-my-tasks">
                     {myTasks.map((task) => (
@@ -330,17 +466,10 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                         tabIndex={0}
                         title="Open this task"
                         onClick={() => openTask(task)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            openTask(task);
-                          }
-                        }}
+                        onKeyDown={onActivate(() => openTask(task))}
                       >
                         <div>
-                          <strong className={task.status === "done" ? "dash-done" : ""}>
-                            {task.title}
-                          </strong>
+                          <strong className={task.status === "done" ? "dash-done" : ""}>{task.title}</strong>
                           <span>
                             {taskPlace(task)}
                             {" · "}
@@ -350,9 +479,7 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
                         {task.status === "done" ? (
                           <span className="dash-badge dash-badge-done">Done</span>
                         ) : (
-                          <span className={`dash-badge dash-badge-${task.priority}`}>
-                            {priorityLabel(task.priority)}
-                          </span>
+                          <span className={`dash-badge dash-badge-${task.priority}`}>{priorityLabel(task.priority)}</span>
                         )}
                       </li>
                     ))}
@@ -367,11 +494,132 @@ export default function ProjectDashboard({ projects }: ProjectDashboardProps) {
   );
 }
 
-function StatTile({ label, value }: { label: string; value: number }) {
+/**
+ * One project's health: a bar of its tasks by status, and what matters for
+ * its method — the active sprint (Scrum) or the In Progress limit (Kanban).
+ */
+function ProjectHealthCard({
+  project,
+  tasks,
+  activeSprint,
+  sprintName,
+  showAi,
+  risk,
+  riskError,
+  checking,
+  onCheck,
+  onOpen,
+}: {
+  project: DashProject;
+  tasks: Task[];
+  activeSprint: Sprint | null;
+  sprintName: (s: Sprint) => string;
+  showAi: boolean;
+  risk: (s: Sprint) => SprintRisk | undefined;
+  riskError: (s: Sprint) => string | undefined;
+  checking: (s: Sprint) => boolean;
+  onCheck: (s: Sprint) => void;
+  onOpen: () => void;
+}) {
+  const kanban = (project.methodology ?? "scrum") === "kanban";
+  const by = (status: Task["status"]) => tasks.filter((t) => t.status === status).length;
+  const total = tasks.length;
+  const done = by("done");
+  const percent = total ? Math.round((done / total) * 100) : 0;
+
+  const sprintTasks = activeSprint ? tasks.filter((t) => sameId(t.sprint, activeSprint._id)) : [];
+  const sprintDone = sprintTasks.filter((t) => t.status === "done").length;
+  const limit = Number(project.wipLimit) || 0;
+  const inProgress = by("in_progress");
+  const sprintRisk = activeSprint ? risk(activeSprint) : undefined;
+
   return (
-    <div className="dash-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div
+      className="dash-project"
+      role="link"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={onActivate(onOpen)}
+      title={`Open the ${kanban ? "Kanban" : "Scrum"} board of ${project.name}`}
+    >
+      <div className="dash-project-head">
+        <strong>{project.name}</strong>
+        <span className={`dash-method dash-method-${kanban ? "kanban" : "scrum"}`}>{kanban ? "Kanban" : "Scrum"}</span>
+      </div>
+
+      <div className="dash-project-progress">
+        <span>
+          <strong>{percent}%</strong> done
+        </span>
+        <span>
+          {done} of {total} {total === 1 ? "task" : "tasks"}
+        </span>
+      </div>
+
+      {/* Tasks by status. Each segment names itself on hover. */}
+      <div className="dash-bar" aria-label={`${project.name}: ${STATUS_ORDER.map((s) => `${STATUS_NAMES[s]} ${by(s)}`).join(", ")}`}>
+        {total === 0 ? (
+          <span className="dash-bar-empty" />
+        ) : (
+          STATUS_ORDER.filter((s) => by(s) > 0).map((s) => (
+            <span
+              key={s}
+              className="dash-bar-seg"
+              style={{ width: `${(by(s) / total) * 100}%`, background: STATUS_COLORS[s] }}
+              title={`${STATUS_NAMES[s]}: ${by(s)}`}
+            />
+          ))
+        )}
+      </div>
+
+      {kanban ? (
+        <p className="dash-project-note">
+          In Progress{" "}
+          <strong className={limit > 0 && inProgress >= limit ? "dash-over" : ""}>
+            {limit > 0 ? `${inProgress} / ${limit}` : inProgress}
+          </strong>
+          {limit > 0 && inProgress >= limit && " · at the limit"} · In Review <strong>{by("review")}</strong>
+        </p>
+      ) : activeSprint ? (
+        <>
+          <p className="dash-project-note">
+            {sprintName(activeSprint)} · <strong>{daysLeft(activeSprint.endDate)}</strong> days left ·{" "}
+            <strong>
+              {sprintDone}/{sprintTasks.length}
+            </strong>{" "}
+            done
+          </p>
+          {showAi && (
+            // The AI button must not also open the board.
+            <div className="dash-project-ai" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+              {sprintRisk ? (
+                <p className="dash-ai-line" title={sprintRisk.reasoning}>
+                  <strong className={`dash-risk-small dash-risk-${sprintRisk.risk}`}>
+                    {sprintRisk.completionForecastPercent}% expected
+                  </strong>
+                  <span className="dash-ai-text">{firstSentence(sprintRisk.reasoning)}</span>
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  className="dash-link"
+                  onClick={() => onCheck(activeSprint)}
+                  disabled={checking(activeSprint)}
+                >
+                  {checking(activeSprint) ? "Checking…" : "AI: will this sprint finish?"}
+                </button>
+              )}
+              {riskError(activeSprint) && (
+                <p className="dash-error" role="alert">
+                  {riskError(activeSprint)}
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="dash-project-note">No active sprint</p>
+      )}
     </div>
   );
 }
@@ -392,30 +640,20 @@ function buildActivity(tasks: Task[], sprints: Sprint[]): Activity[] {
     else if (task.status === "review") text = `Moved “${task.title}” to Review`;
     else if (task.status === "in_progress") text = `Working on “${task.title}”`;
     else text = `Updated “${task.title}”`;
-    items.push({ key: `t-${task._id}`, text, at: task.updatedAt });
+    items.push({ key: `t-${task._id}`, text, at: task.updatedAt, task });
   }
 
   for (const sprint of sprints) {
+    const name = sprintLabel(sprint, sprints.filter((s) => sameId(s.project, sprint.project)));
+    const projectId = String(sprint.project);
     if (sprint.completedAt) {
-      items.push({
-        key: `sc-${sprint._id}`,
-        text: `${sprintLabel(sprint, sprints.filter((s) => sameId(s.project, sprint.project)))} completed`,
-        at: sprint.completedAt,
-      });
+      items.push({ key: `sc-${sprint._id}`, text: `${name} completed`, at: sprint.completedAt, projectId });
     }
     if (sprint.startedAt) {
-      items.push({
-        key: `ss-${sprint._id}`,
-        text: `${sprintLabel(sprint, sprints.filter((s) => sameId(s.project, sprint.project)))} started`,
-        at: sprint.startedAt,
-      });
+      items.push({ key: `ss-${sprint._id}`, text: `${name} started`, at: sprint.startedAt, projectId });
     }
     if (sprint.createdAt) {
-      items.push({
-        key: `sp-${sprint._id}`,
-        text: `${sprintLabel(sprint, sprints.filter((s) => sameId(s.project, sprint.project)))} planned`,
-        at: sprint.createdAt,
-      });
+      items.push({ key: `sp-${sprint._id}`, text: `${name} planned`, at: sprint.createdAt, projectId });
     }
   }
 
