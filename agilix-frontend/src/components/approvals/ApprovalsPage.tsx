@@ -8,6 +8,7 @@ import {
   type ApprovalRequest,
   type PlaceAction,
 } from "../../api/approvals";
+import { getProject } from "../../api/projects";
 import { canEditTaskPlan, readError, timeAgo } from "../scrum/taskDisplay";
 import "./approvals.css";
 
@@ -37,6 +38,16 @@ export default function ApprovalsPage() {
   const [choosing, setChoosing] = useState<{ id: string; mode: "approve" | "reject" } | null>(
     null,
   );
+
+  // Kanban projects have no backlog or sprints: an approved task goes straight
+  // onto the board, and a rejected delete simply keeps the task where it is.
+  const [isKanban, setIsKanban] = useState(false);
+  useEffect(() => {
+    if (!projectId) return;
+    getProject(projectId)
+      .then((project) => setIsKanban(project.methodology === "kanban"))
+      .catch(() => setIsKanban(false));
+  }, [projectId]);
 
   const load = async () => {
     if (!projectId) return;
@@ -181,7 +192,9 @@ export default function ApprovalsPage() {
               disabled={busyId === request._id}
               onClick={() => {
                 if (request.type === "create_task") {
-                  setChoosing({ id: request._id, mode: "approve" });
+                  // Kanban: no backlog/sprint choice, the task goes to To Do on the board.
+                  if (isKanban) decide(request, true, "backlog");
+                  else setChoosing({ id: request._id, mode: "approve" });
                 } else if (window.confirm(`Delete “${request.taskTitle}”? This cannot be undone.`)) {
                   decide(request, true);
                 }
@@ -194,7 +207,7 @@ export default function ApprovalsPage() {
               className="secondary-button"
               disabled={busyId === request._id}
               onClick={() =>
-                request.type === "delete_task"
+                request.type === "delete_task" && !isKanban
                   ? setChoosing({ id: request._id, mode: "reject" })
                   : decide(request, false)
               }

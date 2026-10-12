@@ -110,6 +110,33 @@ export class TasksController {
     }
     if (dto.assignee) await this.access.assertAssignee(projectId, dto.assignee);
 
+    // Title and description describe what was asked for, so only managers and
+    // admins change them (developers and testers need approval even to create
+    // a task). Others can leave a comment instead.
+    if (dto.title !== undefined || dto.description !== undefined) {
+      requireRole(
+        user,
+        'Only a manager can edit a task. Please ask a manager to change it.',
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+      );
+      if (dto.title !== undefined && !dto.title.trim()) {
+        throw new BadRequestException('The task title cannot be empty.');
+      }
+    }
+
+    // Story points: the person doing the task estimates it, and managers can
+    // adjust. Nobody else changes someone else's estimate. An unassigned task
+    // is estimated by a manager (or by whoever takes it on, once assigned).
+    if (dto.storyPoints !== undefined) {
+      const isPlanner = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN;
+      if (!isPlanner && assignee !== user.userId) {
+        throw new ForbiddenException(
+          'Only the person this task is assigned to, or a manager, can change its story points.',
+        );
+      }
+    }
+
     // Putting a task into a sprint has its own route, which also checks the sprint.
     if (dto.sprint) {
       throw new BadRequestException('Use "Add to sprint" to put a task into a sprint.');

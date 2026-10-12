@@ -238,6 +238,14 @@ export class ApprovalsService {
         }
         let sprintFields: Record<string, unknown> = { sprint: null };
         let where = 'in the backlog';
+        // Kanban projects have no backlog: the task appears in To Do on the board.
+        const project: any = await this.connection
+          .model('Project')
+          .findById(request.project)
+          .select('methodology')
+          .lean()
+          .exec();
+        if (project?.methodology === 'kanban') where = 'in To Do on the Kanban board';
         if (action === 'sprint') {
           const sprint = await this.requireActiveSprint(projectId);
           sprintFields = { sprint: sprint._id, addedToSprintAt: new Date() };

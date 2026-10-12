@@ -6,10 +6,13 @@ import { getSprints, type Sprint } from "../../api/sprints";
 import {
   getBurndown,
   getBurnout,
+  getKanbanReport,
   getMyReport,
   getSprintReport,
   getVelocity,
   type BurnoutReport,
+  type KanbanReport,
+  type KanbanReportRange,
   type MyReport,
   type SprintReport,
   type SprintSeries,
@@ -19,7 +22,14 @@ import { useAuth } from "../../auth/auth-context";
 import SprintProgress from "../sprints/SprintProgress";
 import { readError } from "../scrum/taskDisplay";
 import { projectPeople } from "../team/managerTeam";
-import { BurndownChart, BurnoutChart, formatHours, VelocityChart } from "./ReportCharts";
+import {
+  BurndownChart,
+  BurnoutChart,
+  CumulativeFlowChart,
+  formatHours,
+  ThroughputChart,
+  VelocityChart,
+} from "./ReportCharts";
 import "./reports.css";
 
 type StatIconKind = "check" | "calendar" | "chart" | "person" | "clock" | "swap";
@@ -193,7 +203,7 @@ export default function ReportsPage() {
             {viewedId
               ? `Tasks, sprint progress and tracked time${project ? ` on ${project.name}` : ""}.`
               : isTeamView
-                ? `Sprint progress, velocity and team workload${project ? ` for ${project.name}` : " for this project"}.`
+                ? `${isKanban ? "Flow, cycle time, throughput" : "Sprint progress, velocity"} and team workload${project ? ` for ${project.name}` : " for this project"}.`
                 : "Your tasks, sprint progress and tracked time on this project."}
           </p>
         </div>
@@ -396,12 +406,14 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
             </h3>
             <p>done / total</p>
           </div>
-          <div>
-            <StatIcon kind="person" />
-            <span className="eyebrow">SPRINT PACE</span>
-            <h3>{summary.sprintPace ? PACE_LABEL[summary.sprintPace] : "No active sprint"}</h3>
-            <p>finished work vs time passed</p>
-          </div>
+          {isScrum && (
+            <div>
+              <StatIcon kind="person" />
+              <span className="eyebrow">SPRINT PACE</span>
+              <h3>{summary.sprintPace ? PACE_LABEL[summary.sprintPace] : "No active sprint"}</h3>
+              <p>finished work vs time passed</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -584,6 +596,8 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
         </>
       )}
 
+      {!isScrum && <KanbanReports projectId={projectId} />}
+
       <section className="rpt-section">
         <h2>Team workload</h2>
         {workload.length === 0 ? (
@@ -620,6 +634,172 @@ function TeamReports({ projectId, isScrum }: { projectId: string; isScrum: boole
           </div>
         )}
       </section>
+    </>
+  );
+}
+
+/* --------------------------------- Kanban --------------------------------- */
+
+const KANBAN_RANGES: { value: KanbanReportRange; label: string }[] = [
+  { value: 14, label: "Last 14 days" },
+  { value: 30, label: "Last 30 days" },
+  { value: 90, label: "Last 90 days" },
+];
+
+/** 0.4 -> "10h", 1 -> "1 day", 3.5 -> "3.5 days", null -> "–". */
+function formatDays(days: number | null): string {
+  if (days === null) return "–";
+  if (days < 1) return `${Math.max(1, Math.round(days * 24))}h`;
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}
+
+/** Cumulative flow, throughput, lead time and cycle time of a Kanban project. */
+function KanbanReports({ projectId }: { projectId: string }) {
+  const [range, setRange] = useState<KanbanReportRange>(30);
+  const [report, setReport] = useState<KanbanReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    getKanbanReport(projectId, range)
+      .then((data) => !cancelled && setReport(data))
+      .catch((err) => !cancelled && setError(readError(err, "Failed to load the Kanban reports")))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, range]);
+
+  const finishedInRange = report?.leadTime.count ?? 0;
+  const weeks = report?.throughput.length ?? 0;
+  const perWeek = weeks > 0 ? Math.round((finishedInRange / weeks) * 10) / 10 : 0;
+
+  return (
+    <>
+      <section className="rpt-section">
+        <div className="rpt-section-head">
+          <div>
+            <h2>Flow over time</h2>
+            <p className="rpt-sub">
+              Tasks in each column at the end of each day. A widening In Progress or Review band means
+              work is piling up there; a steadily rising Done band means work is flowing.
+            </p>
+          </div>
+          <select
+            className="rpt-select"
+            aria-label="Time range"
+            value={range}
+            onChange={(e) => setRange(Number(e.target.value) as KanbanReportRange)}
+          >
+            {KANBAN_RANGES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {loading && <p className="rpt-empty">Loading Kanban reports...</p>}
+        {error && !loading && <p className="rpt-empty">{error}</p>}
+        {report && !loading && !error && (
+          <>
+            {report.cumulativeFlow.every((d) => d.todo + d.inProgress + d.review + d.done === 0) ? (
+              <p className="rpt-empty">No tasks yet. Create tasks on the Kanban board to see the flow.</p>
+            ) : (
+              <CumulativeFlowChart days={report.cumulativeFlow} />
+            )}
+            {report.estimatedTasks > 0 && (
+              <p className="rpt-note">
+                {report.estimatedTasks} older {report.estimatedTasks === 1 ? "task has" : "tasks have"} no
+                recorded moves, so {report.estimatedTasks === 1 ? "its dates are" : "their dates are"} estimated.
+                Moves from now on are recorded exactly.
+              </p>
+            )}
+          </>
+        )}
+      </section>
+
+      {report && !loading && !error && (
+        <>
+          <div className="project-info-card">
+            <div>
+              <StatIcon kind="clock" />
+              <span className="eyebrow">CYCLE TIME</span>
+              <h3>{formatDays(report.cycleTime.medianDays)}</h3>
+              <p>
+                median, In Progress → Done
+                {report.cycleTime.averageDays !== null && ` · average ${formatDays(report.cycleTime.averageDays)}`}
+              </p>
+            </div>
+            <div>
+              <StatIcon kind="calendar" />
+              <span className="eyebrow">LEAD TIME</span>
+              <h3>{formatDays(report.leadTime.medianDays)}</h3>
+              <p>
+                median, created → Done
+                {report.leadTime.averageDays !== null && ` · average ${formatDays(report.leadTime.averageDays)}`}
+              </p>
+            </div>
+            <div>
+              <StatIcon kind="chart" />
+              <span className="eyebrow">THROUGHPUT</span>
+              <h3>{perWeek} / week</h3>
+              <p>tasks finished per week, on average</p>
+            </div>
+            <div>
+              <StatIcon kind="check" />
+              <span className="eyebrow">FINISHED</span>
+              <h3>{finishedInRange}</h3>
+              <p>
+                in the last {report.days} days
+                {report.finishedWithoutStart > 0 &&
+                  ` · ${report.finishedWithoutStart} with no recorded In Progress start (left out of cycle time)`}
+              </p>
+            </div>
+          </div>
+
+          <section className="rpt-section">
+            <h2>Throughput</h2>
+            <p className="rpt-sub">Tasks that reached Done each week.</p>
+            {finishedInRange === 0 ? (
+              <p className="rpt-empty">No tasks finished in this period yet.</p>
+            ) : (
+              <ThroughputChart weeks={report.throughput} />
+            )}
+          </section>
+
+          <section className="rpt-section">
+            <h2>Recently finished</h2>
+            {report.recentlyFinished.length === 0 ? (
+              <p className="rpt-empty">No tasks finished in this period yet.</p>
+            ) : (
+              <table className="rpt-velocity-table">
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th>Finished</th>
+                    <th>Cycle time</th>
+                    <th>Lead time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.recentlyFinished.map((t) => (
+                    <tr key={t.id}>
+                      <td>{t.title}</td>
+                      <td>{new Date(t.finishedAt).toLocaleDateString()}</td>
+                      <td>{t.cycleDays === null ? "–" : formatDays(t.cycleDays)}</td>
+                      <td>{formatDays(t.leadDays)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+        </>
+      )}
     </>
   );
 }

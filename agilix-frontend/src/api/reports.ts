@@ -116,3 +116,53 @@ export const getMyReport = (projectId: string, userId?: string) =>
 
 export const getBurnout = (sprintId: string) =>
   api<BurnoutReport>(`/reports/scrum/burnout/${sprintId}`);
+
+/* ------------------------------- Kanban reports ------------------------------- */
+
+export type KanbanReportRange = 14 | 30 | 90;
+
+/** How many tasks sat in each column at the end of one day. */
+export interface CfdDay {
+  date: string;
+  todo: number;
+  inProgress: number;
+  review: number;
+  done: number;
+}
+
+export interface ThroughputWeek {
+  /** Monday of the week, "YYYY-MM-DD". */
+  weekStart: string;
+  finished: number;
+}
+
+export interface DurationStats {
+  count: number;
+  /** Days, one decimal; null when nothing finished in the range. */
+  averageDays: number | null;
+  medianDays: number | null;
+}
+
+export interface KanbanReport {
+  days: number;
+  from: string;
+  to: string;
+  cumulativeFlow: CfdDay[];
+  throughput: ThroughputWeek[];
+  /** Created → Done. */
+  leadTime: DurationStats;
+  /** First In Progress → Done. */
+  cycleTime: DurationStats;
+  finishedWithoutStart: number;
+  recentlyFinished: {
+    id: string;
+    title: string;
+    finishedAt: string;
+    leadDays: number;
+    cycleDays: number | null;
+  }[];
+  estimatedTasks: number;
+}
+
+export const getKanbanReport = (projectId: string, days: KanbanReportRange) =>
+  api<KanbanReport>(`/reports/kanban/${projectId}?days=${days}`);

@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export const PROJECT_STATUSES = ['active', 'on_hold', 'completed'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -19,4 +19,11 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsIn([...PROJECT_STATUSES], { message: 'Status must be active, on_hold or completed' })
   status?: ProjectStatus;
+
+  /** Kanban WIP limit for the In Progress column. 0 turns the limit off. */
+  @IsOptional()
+  @IsInt({ message: 'The WIP limit must be a whole number' })
+  @Min(0, { message: 'The WIP limit cannot be negative' })
+  @Max(100, { message: 'The WIP limit can be at most 100' })
+  wipLimit?: number;
 }

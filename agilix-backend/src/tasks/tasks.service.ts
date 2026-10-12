@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Task, TaskDocument, TaskStatus } from './schemas/task.schema';
 import { Sprint, SprintDocument, SprintStatus } from '../sprints/schemas/sprint.schema';
+import { Project, ProjectDocument } from '../projects/schemas/project.schema';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserRole } from '../users/schemas/user.schema';
@@ -39,6 +40,7 @@ export class TasksService {
   constructor(
     @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
     @InjectModel(Sprint.name) private sprintModel: Model<SprintDocument>,
+    @InjectModel(Project.name) private projectModel: Model<ProjectDocument>,
     private readonly notifications: NotificationsService,
   ) {}
   create(dto: CreateTaskDto) {
@@ -71,12 +73,21 @@ export class TasksService {
     let sentBack: { assignee: string | null; title: string; project: string } | null = null;
     // Who looked at a task in Review, so the reviewer's report can count it.
     let review: { by: string; outcome: 'approved' | 'sent_back'; at: Date } | null = null;
+    // A real column change, recorded for the Kanban reports.
+    let moved: { status: TaskStatus; at: Date } | null = null;
+    let firstStart = false;
     if (dto.status !== undefined) {
-      const before = await this.taskModel.findById(id).select('status sprint').lean().exec();
+      const before = await this.taskModel.findById(id).select('status sprint startedAt').lean().exec();
       sentBack = await this.checkStatusFlow(id, dto.status, reviewComment, role, userId);
-      if (userId && before?.sprint && before.status === TaskStatus.REVIEW) {
+      if (dto.status === TaskStatus.IN_PROGRESS) await this.checkWipLimit(id);
+      // Leaving Review (Scrum sprint or Kanban board) is a review: approved or sent back.
+      if (userId && before?.status === TaskStatus.REVIEW) {
         if (dto.status === TaskStatus.DONE) review = { by: userId, outcome: 'approved', at: new Date() };
         if (dto.status === TaskStatus.IN_PROGRESS) review = { by: userId, outcome: 'sent_back', at: new Date() };
+      }
+      if (before && before.status !== dto.status) {
+        moved = { status: dto.status, at: new Date() };
+        firstStart = dto.status === TaskStatus.IN_PROGRESS && !before.startedAt;
       }
     }
 
@@ -102,8 +113,13 @@ export class TasksService {
     if (dto.sprint !== undefined) {
       changes.addedToSprintAt = dto.sprint ? new Date() : null;
     }
+    if (firstStart && moved) changes.startedAt = moved.at;
 
-    const update: Record<string, unknown> = review ? { ...changes, $push: { reviews: review } } : changes;
+    const push: Record<string, unknown> = {};
+    if (review) push.reviews = review;
+    if (moved) push.statusHistory = moved;
+    const update: Record<string, unknown> =
+      Object.keys(push).length > 0 ? { ...changes, $push: push } : changes;
     const task = await this.taskModel.findByIdAndUpdate(id, update, { new: true });
     if (!task) throw new NotFoundException('Task not found');
 
@@ -161,10 +177,41 @@ export class TasksService {
   }
 
   /**
-   * Tasks inside a sprint (Scrum) move To Do → In Progress → Review → Done, one
-   * step at a time. The only step back is Review → In Progress, by a tester,
-   * manager or admin, with a comment. Tasks without a sprint (backlog and
-   * Kanban tasks) are not affected, so the Kanban board works as before.
+   * Kanban WIP limit: a task may join the In Progress column only while the
+   * column holds fewer tasks than the project's limit. Sprint (Scrum) tasks,
+   * projects without a limit, and tasks already In Progress are not affected.
+   * Everyone, managers included, is held to the limit; a manager can raise it.
+   */
+  private async checkWipLimit(taskId: string): Promise<void> {
+    if (!OBJECT_ID_PATTERN.test(taskId)) return; // checkStatusFlow reports the bad id
+    const task = await this.taskModel.findById(taskId).select('status sprint project').lean().exec();
+    if (!task || task.sprint || task.status === TaskStatus.IN_PROGRESS) return;
+
+    const project = await this.projectModel
+      .findById(task.project)
+      .select('methodology wipLimit')
+      .lean()
+      .exec();
+    const limit = Number(project?.wipLimit) || 0;
+    if (!project || project.methodology !== 'kanban' || limit <= 0) return;
+
+    const inProgress = await this.taskModel.countDocuments({
+      project: task.project,
+      status: TaskStatus.IN_PROGRESS,
+    });
+    if (inProgress >= limit) {
+      throw new BadRequestException(
+        `In Progress is full: the limit is ${limit} task${limit === 1 ? '' : 's'}. ` +
+          'Finish or move a task out of In Progress first, or ask a manager to raise the limit.',
+      );
+    }
+  }
+
+  /**
+   * Tasks on a board move To Do → In Progress → Review → Done, one step at a
+   * time. The only step back is Review → In Progress, by a tester, manager or
+   * admin, with a comment. This covers tasks in a sprint (Scrum) and every task
+   * of a Kanban project. Scrum backlog tasks (no sprint yet) are not affected.
    */
   private async checkStatusFlow(
     id: string,
@@ -179,7 +226,12 @@ export class TasksService {
 
     const current = await this.taskModel.findById(id).select('status sprint assignee title project');
     if (!current) throw new NotFoundException('Task not found');
-    if (!current.sprint || current.status === status) return null;
+    if (current.status === status) return null;
+    if (!current.sprint) {
+      // Not in a sprint: only a Kanban project's tasks follow the board rules.
+      const project = await this.projectModel.findById(current.project).select('methodology').lean().exec();
+      if (project?.methodology !== 'kanban') return null;
+    }
 
     // The one step backwards: a tester (or manager or admin) finds a problem in
     // Review and sends the task back to In Progress, with a comment for the assignee.
@@ -209,7 +261,7 @@ export class TasksService {
     }
     if (status !== next) {
       throw new BadRequestException(
-        `Sprint tasks move one step at a time: ${STATUS_LABELS[current.status]} → ${STATUS_LABELS[next]}.`,
+        `Tasks move one step at a time: ${STATUS_LABELS[current.status]} → ${STATUS_LABELS[next]}.`,
       );
     }
     if (status === TaskStatus.DONE) {

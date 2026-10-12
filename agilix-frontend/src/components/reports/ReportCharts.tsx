@@ -1,4 +1,5 @@
-import type { BurnoutReport, SeriesDay, VelocityReport } from "../../api/reports";
+import { useState } from "react";
+import type { BurnoutReport, CfdDay, SeriesDay, ThroughputWeek, VelocityReport } from "../../api/reports";
 
 const WIDTH = 640;
 const HEIGHT = 290;
@@ -306,6 +307,187 @@ export function VelocityChart({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* ------------------------------- Kanban charts ------------------------------- */
+
+/**
+ * Column colors for the cumulative flow diagram, bottom band first. Checked
+ * with the dataviz palette validator (color-blind separation and contrast);
+ * the legend, the right-edge labels and the hover text carry the names too.
+ */
+const CFD_BANDS = [
+  { key: "done", name: "Done", color: "#3f8a4a" },
+  { key: "review", name: "Review", color: "#8c62b8" },
+  { key: "inProgress", name: "In Progress", color: "#c9961a" },
+  { key: "todo", name: "To Do", color: "#5b7fc4" },
+] as const;
+
+type BandKey = (typeof CFD_BANDS)[number]["key"];
+
+/**
+ * Cumulative flow diagram: tasks in each column at the end of each day,
+ * stacked. A widening middle band means work is piling up In Progress.
+ */
+export function CumulativeFlowChart({ days }: { days: CfdDay[] }) {
+  const totals = days.map((d) => d.todo + d.inProgress + d.review + d.done);
+  const max = niceMax(Math.max(0, ...totals));
+  const plotW = WIDTH - PAD.left - PAD.right - 70; // room for the labels on the right
+  const plotH = HEIGHT - PAD.top - PAD.bottom;
+  const x = (i: number) => PAD.left + (days.length > 1 ? (i / (days.length - 1)) * plotW : plotW / 2);
+  const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f * 10) / 10);
+  const labelEvery = Math.max(1, Math.ceil(days.length / 7));
+  const [hover, setHover] = useState<number | null>(null);
+
+  // Cumulative tops of each band, bottom (Done) to top (To Do).
+  const tops = days.map((d) => {
+    const top = {} as Record<BandKey, number>;
+    let sum = 0;
+    for (const band of CFD_BANDS) {
+      sum += d[band.key];
+      top[band.key] = sum;
+    }
+    return top;
+  });
+  const bottomOf = (bandIndex: number, i: number) =>
+    bandIndex === 0 ? 0 : tops[i][CFD_BANDS[bandIndex - 1].key];
+
+  const areaPath = (bandIndex: number) => {
+    const key = CFD_BANDS[bandIndex].key;
+    const upper = days.map((_, i) => `${x(i).toFixed(1)},${y(tops[i][key]).toFixed(1)}`);
+    const lower = days
+      .map((_, i) => `${x(i).toFixed(1)},${y(bottomOf(bandIndex, i)).toFixed(1)}`)
+      .reverse();
+    return `M${upper.join(" L")} L${lower.join(" L")} Z`;
+  };
+
+  const last = days.length - 1;
+  const step = days.length > 1 ? plotW / (days.length - 1) : plotW;
+  const hovered = hover !== null ? days[hover] : null;
+
+  return (
+    <div className="rpt-chart">
+      <svg
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        role="img"
+        aria-label="Cumulative flow: tasks in each column per day"
+        onMouseLeave={() => setHover(null)}
+      >
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={PAD.left} x2={PAD.left + plotW} y1={y(t)} y2={y(t)} stroke="#e6dfcd" />
+            <text x={PAD.left - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="#6b6f62">
+              {t}
+            </text>
+          </g>
+        ))}
+
+        {days.map((day, i) =>
+          i % labelEvery === 0 || i === last ? (
+            <text key={day.date} x={x(i)} y={HEIGHT - PAD.bottom + 18} textAnchor="middle" fontSize="11" fill="#6b6f62">
+              {shortDate(day.date)}
+            </text>
+          ) : null,
+        )}
+
+        {/* Bands, with a 2px white edge between them so neighbors stay apart. */}
+        {CFD_BANDS.map((band, b) => (
+          <path key={band.key} d={areaPath(b)} fill={band.color} fillOpacity={0.85} stroke="#ffffff" strokeWidth={2} strokeLinejoin="round" />
+        ))}
+
+        {/* Names at the right edge, beside the latest day's band (only if the band is visible). */}
+        {last >= 0 &&
+          CFD_BANDS.map((band, b) => {
+            const top = tops[last][band.key];
+            const bottom = bottomOf(b, last);
+            if (top - bottom <= 0) return null;
+            return (
+              <text key={band.key} x={PAD.left + plotW + 8} y={(y(top) + y(bottom)) / 2 + 4} fontSize="11" fontWeight="600" fill={AXIS}>
+                {band.name} {top - bottom}
+              </text>
+            );
+          })}
+
+        {/* Hover: a guide line on the day under the pointer. */}
+        {hover !== null && (
+          <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + plotH} stroke={AXIS} strokeWidth={1} strokeDasharray="3 3" />
+        )}
+        {days.map((day, i) => (
+          <rect
+            key={`hit-${day.date}`}
+            x={x(i) - step / 2}
+            y={PAD.top}
+            width={Math.max(step, 6)}
+            height={plotH}
+            fill="transparent"
+            onMouseEnter={() => setHover(i)}
+          >
+            <title>
+              {`${shortDate(day.date)}: To Do ${day.todo}, In Progress ${day.inProgress}, Review ${day.review}, Done ${day.done}`}
+            </title>
+          </rect>
+        ))}
+
+        <AxisTitles xLabel="Date" yLabel="Tasks" />
+      </svg>
+
+      {hovered && (
+        <p className="rpt-hover-readout" aria-live="polite">
+          <strong>{shortDate(hovered.date)}</strong> · To Do {hovered.todo} · In Progress {hovered.inProgress} · Review{" "}
+          {hovered.review} · Done {hovered.done}
+        </p>
+      )}
+
+      <Legend items={[...CFD_BANDS].reverse().map((b) => ({ name: b.name, color: b.color }))} />
+    </div>
+  );
+}
+
+/** Tasks finished per week. */
+export function ThroughputChart({ weeks }: { weeks: ThroughputWeek[] }) {
+  const max = niceMax(Math.max(0, ...weeks.map((w) => w.finished)));
+  const plotW = WIDTH - PAD.left - PAD.right;
+  const plotH = HEIGHT - PAD.top - PAD.bottom;
+  const group = plotW / Math.max(1, weeks.length);
+  const bar = Math.min(48, group * 0.6);
+  const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f * 10) / 10);
+
+  return (
+    <div className="rpt-chart">
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label="Throughput: tasks finished per week">
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={PAD.left} x2={WIDTH - PAD.right} y1={y(t)} y2={y(t)} stroke="#e6dfcd" />
+            <text x={PAD.left - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="#6b6f62">
+              {t}
+            </text>
+          </g>
+        ))}
+        {weeks.map((w, i) => {
+          const cx = PAD.left + group * i + group / 2;
+          const height = PAD.top + plotH - y(w.finished);
+          return (
+            <g key={w.weekStart}>
+              {w.finished > 0 && (
+                <rect x={cx - bar / 2} y={y(w.finished)} width={bar} height={height} fill={ACCENT} rx="3">
+                  <title>{`Week of ${shortDate(w.weekStart)}: ${w.finished} finished`}</title>
+                </rect>
+              )}
+              <text x={cx} y={y(w.finished) - 5} textAnchor="middle" fontSize="11" fontWeight="600" fill={AXIS}>
+                {w.finished}
+              </text>
+              <text x={cx} y={HEIGHT - PAD.bottom + 18} textAnchor="middle" fontSize="11" fill="#6b6f62">
+                {shortDate(w.weekStart)}
+              </text>
+            </g>
+          );
+        })}
+        <AxisTitles xLabel="Week starting" yLabel="Tasks finished" />
+      </svg>
     </div>
   );
 }

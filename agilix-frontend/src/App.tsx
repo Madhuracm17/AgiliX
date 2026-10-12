@@ -5,6 +5,7 @@ import {
   Routes,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useAuth } from "./auth/auth-context";
@@ -20,9 +21,18 @@ import ProjectSettings from "./components/projects/ProjectSettings";
 import ApprovalsPage from "./components/approvals/ApprovalsPage";
 import TeamRequests from "./components/team/TeamRequests";
 import AdminTeamPage from "./components/team/AdminTeamPage";
+import KanbanDndBoard from "./components/kanban/KanbanDndBoard";
+import { personLabel, useProjectPeople } from "./components/team/useProjectPeople";
+import { canEditTaskPlan, canMarkDone, readError } from "./components/scrum/taskDisplay";
+import StoryPointEstimator from "./components/ai/StoryPointEstimator";
+import PriorityRecommender from "./components/ai/PriorityRecommender";
+import KanbanInsights from "./components/ai/KanbanInsights";
+import TaskSuggestions from "./components/ai/TaskSuggestions";
+import { usePendingDeletes } from "./components/approvals/usePendingDeletes";
+import { STORY_POINT_SCALE, type StoryPointValue, type TaskSuggestion } from "./api/ai";
 import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
 import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
-import { PROJECT_STATUS_LABELS, type ProjectStatus } from "./api/projects";
+import { PROJECT_STATUS_LABELS, getProject, updateProject, type ProjectStatus } from "./api/projects";
 import "./components/team/team.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -55,6 +65,8 @@ type Task = {
   assignee?: User | null;
   storyPoints?: number;
   type?: string | null;
+  /** What a tester asked to fix when sending the task back from Review. */
+  reviewNote?: { text: string; byName?: string } | null;
 };
 
 type Sprint = {
@@ -894,7 +906,13 @@ function ProjectOverviewBody() {
 
         <button
           className="primary-button"
-          onClick={() => navigate(`/projects/${projectId}/backlog`)}
+          onClick={() =>
+            navigate(
+              (project.methodology || "scrum") === "kanban"
+                ? `/projects/${projectId}/kanban?create=1`
+                : `/projects/${projectId}/backlog`,
+            )
+          }
         >
           + Create Task
         </button>
@@ -946,27 +964,31 @@ function ProjectOverviewBody() {
         </div>
       </div>
 
-      <div className="dashboard-grid">
-        <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <div>
-              <span className="eyebrow">BACKLOG</span>
-              <h2>Tasks</h2>
+      <div className="dashboard-grid dashboard-grid-fill">
+        {/* The backlog belongs to Scrum (tasks waiting for a sprint). Kanban
+            projects keep all their tasks on the board. */}
+        {(project.methodology || "scrum") !== "kanban" && (
+          <div className="dashboard-card">
+            <div className="dashboard-card-header">
+              <div>
+                <span className="eyebrow">BACKLOG</span>
+                <h2>Tasks</h2>
+              </div>
             </div>
+
+            <p>
+              Manage your product backlog, create tasks and prioritize
+              upcoming work.
+            </p>
+
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/projects/${projectId}/backlog`)}
+            >
+              View Backlog
+            </button>
           </div>
-
-          <p>
-            Manage your product backlog, create tasks and prioritize
-            upcoming work.
-          </p>
-
-          <button
-            className="secondary-button"
-            onClick={() => navigate(`/projects/${projectId}/backlog`)}
-          >
-            View Backlog
-          </button>
-        </div>
+        )}
 
         {(project.methodology || "scrum") === "kanban" ? (
           <div className="dashboard-card">
@@ -978,8 +1000,8 @@ function ProjectOverviewBody() {
             </div>
 
             <p>
-              Move tasks across Todo, In Progress and Done in a continuous
-              workflow — no sprints.
+              Move tasks across To Do, In Progress, Review and Done in a
+              continuous workflow — no sprints.
             </p>
 
             <button
@@ -1102,6 +1124,34 @@ function ProjectOverviewBody() {
       </div>
     </div>
   );
+}
+
+/**
+ * Pages that belong to Scrum only (backlog, sprints, the sprint task form).
+ * A Kanban project has none of these, so it is sent to its Kanban board
+ * instead, e.g. when someone follows an old link.
+ */
+function ScrumOnly({ children, createTask = false }: { children: ReactElement; createTask?: boolean }) {
+  const { projectId } = useParams();
+  const [methodology, setMethodology] = useState<"scrum" | "kanban" | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    getProject(projectId)
+      .then((project) => !cancelled && setMethodology(project.methodology ?? "scrum"))
+      // If the project can't be loaded, let the page show its own error.
+      .catch(() => !cancelled && setMethodology("scrum"));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  if (methodology === null) return null;
+  if (methodology === "kanban") {
+    return <Navigate to={`/projects/${projectId}/kanban${createTask ? "?create=1" : ""}`} replace />;
+  }
+  return children;
 }
 
 // Product Backlog (Scrum) — see components/scrum/ProductBacklogPage.tsx.
@@ -1280,22 +1330,129 @@ function AiInsightsPage() {
   );
 }
 
+const STATUS_NAMES: Record<Task["status"], string> = {
+  todo: "To Do",
+  in_progress: "In Progress",
+  review: "Review",
+  done: "Done",
+};
+
 function KanbanBoardPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+  // Managers and admins assign tasks to anyone on the team and can change the
+  // assignee later. Developers and testers create tasks for themselves (or
+  // unassigned), as on the Scrum side; the backend enforces the same rule.
+  const canAssignOthers = canEditTaskPlan(currentUser.role);
+  const people = useProjectPeople(canAssignOthers ? projectId : undefined);
 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  // "+ Create Task" on the project page links here with ?create=1.
+  const [searchParams, setSearchParams] = useSearchParams();
+  // "Add a task" panel, as on the Scrum backlog: first choose AI suggestions
+  // or a manual form.
+  const [adding, setAdding] = useState(searchParams.get("create") === "1");
+  const [addMode, setAddMode] = useState<"ai" | "manual" | null>(null);
   const [creating, setCreating] = useState(false);
+
+  const closeAddPanel = () => {
+    setAdding(false);
+    setAddMode(null);
+  };
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setAdding(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
-  const [assignee, setAssignee] = useState("");
+  const [assignee, setAssignee] = useState(canAssignOthers ? "" : currentUser._id);
+  // 0 = not estimated yet.
+  const [storyPoints, setStoryPoints] = useState<StoryPointValue>(0);
+  // The card whose "AI & estimate" panel is open, if any.
+  const [toolsTaskId, setToolsTaskId] = useState<string | null>(null);
+
+  // WIP limit: the most tasks allowed in In Progress at once (0 = no limit).
+  const [wipLimit, setWipLimit] = useState(0);
+  const [editingLimit, setEditingLimit] = useState(false);
+  const [limitDraft, setLimitDraft] = useState("0");
+  const [savingLimit, setSavingLimit] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    getProject(projectId)
+      .then((project) => {
+        if (!cancelled) setWipLimit(project.wipLimit ?? 0);
+      })
+      .catch(() => {
+        // Without the project the board still works, just without a limit shown.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
+
+  // Board rules (the same as the Scrum board; the backend enforces them too):
+  // the assignee moves their own task To Do → In Progress → Review, and a
+  // tester, manager or admin signs it off to Done or sends it back with a comment.
+  const signOff = canMarkDone(currentUser.role);
+  const [bouncingId, setBouncingId] = useState<string | null>(null);
+  const [bounceText, setBounceText] = useState("");
+  const [bounceBusy, setBounceBusy] = useState(false);
+
+  /** Why this move is not allowed, or null if it is. */
+  const moveProblem = (task: Task, status: Task["status"]): string | null => {
+    const flow: Task["status"][] = ["todo", "in_progress", "review", "done"];
+    const next = flow[flow.indexOf(task.status) + 1];
+    if (!next) return "This task is already Done.";
+    if (status !== next) {
+      return `Tasks move one step at a time: ${STATUS_NAMES[task.status]} → ${STATUS_NAMES[next]}.`;
+    }
+    if (status === "done") {
+      return signOff
+        ? null
+        : "A task can only be marked Done by a tester, manager or admin. Please ask a tester to review it.";
+    }
+    if (!task.assignee) return "This task has no assignee yet. Assign it to someone before moving it.";
+    if (task.assignee._id !== currentUser._id) {
+      return "Only the person this task is assigned to can move it to In Progress or Review.";
+    }
+    return null;
+  };
+
+  // Story points: set by the person doing the task, or adjusted by a manager.
+  // (The backend enforces the same rule.)
+  const canEditPoints = (task: Task) =>
+    canAssignOthers || (!!task.assignee && task.assignee._id === currentUser._id);
+
+  const saveWipLimit = async () => {
+    if (!projectId) return;
+    const value = limitDraft.trim() === "" ? 0 : Number(limitDraft);
+    if (!Number.isInteger(value) || value < 0 || value > 100) {
+      alert("Please enter a whole number from 0 to 100 (0 means no limit).");
+      return;
+    }
+    try {
+      setSavingLimit(true);
+      const saved = await updateProject(projectId, { wipLimit: value });
+      setWipLimit(saved.wipLimit ?? value);
+      setEditingLimit(false);
+    } catch (err) {
+      alert(readError(err, "We could not save the WIP limit."));
+    } finally {
+      setSavingLimit(false);
+    }
+  };
 
   const load = async () => {
     if (!projectId) return;
@@ -1304,10 +1461,7 @@ function KanbanBoardPage() {
       setLoading(true);
       setError("");
 
-      const [taskRes, userRes] = await Promise.all([
-        fetch(`${API_URL}/tasks?project=${projectId}`),
-        fetch(`${API_URL}/users`),
-      ]);
+      const taskRes = await fetch(`${API_URL}/tasks?project=${projectId}`);
 
       if (!taskRes.ok) {
         throw new Error(
@@ -1316,10 +1470,6 @@ function KanbanBoardPage() {
       }
 
       setTasks(await taskRes.json());
-
-      if (userRes.ok) {
-        setUsers(await userRes.json());
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -1349,6 +1499,7 @@ function KanbanBoardPage() {
           project: projectId,
           priority,
           assignee: assignee || undefined,
+          storyPoints,
         }),
       });
 
@@ -1362,8 +1513,9 @@ function KanbanBoardPage() {
       setTitle("");
       setDescription("");
       setPriority("medium");
-      setAssignee("");
-      setShowForm(false);
+      setAssignee(canAssignOthers ? "" : currentUser._id);
+      setStoryPoints(0);
+      closeAddPanel();
 
       await load();
     } catch (err) {
@@ -1374,27 +1526,291 @@ function KanbanBoardPage() {
   };
 
   const moveTask = async (taskId: string, status: Task["status"]) => {
+    const task = tasks.find((t) => t._id === taskId);
+    if (!task || task.status === status) return;
+
+    // Back from Review: a tester (or manager/admin) says what to fix first.
+    if (task.status === "review" && status === "in_progress") {
+      if (!signOff) {
+        alert("Only a tester, manager or admin can send a task back from Review.");
+        return;
+      }
+      setBouncingId(task._id);
+      setBounceText("");
+      return;
+    }
+
+    const problem = moveProblem(task, status);
+    if (problem) {
+      alert(problem);
+      return;
+    }
+
+    // WIP limit: don't start another task while In Progress is full.
+    // (The backend checks this too; this just saves a round trip.)
+    if (status === "in_progress" && wipLimit > 0 && inProgressCount >= wipLimit) {
+      alert(
+        `In Progress is full: the limit is ${wipLimit} task${wipLimit === 1 ? "" : "s"}. ` +
+          "Finish or move a task out of In Progress first" +
+          (canAssignOthers ? ", or raise the limit." : ", or ask a manager to raise the limit."),
+      );
+      return;
+    }
+
     // Optimistic update so the card jumps columns instantly, then
     // reconcile with the server. Reload on failure to undo it.
     setTasks((prev) =>
       prev.map((t) => (t._id === taskId ? { ...t, status } : t))
     );
 
-    const response = await fetch(`${API_URL}/tasks/${taskId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
+    try {
+      const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
 
-    if (!response.ok) {
-      alert("Failed to move task");
+      if (!response.ok) {
+        alert(await failureMessage(response, "We could not move the task. Please try again."));
+        await load();
+      }
+    } catch {
+      alert("We could not reach the server, so the task was not moved.");
       await load();
+    }
+  };
+
+  // Save story points or priority for one task. Throws with the server's
+  // message on failure, so the AI panels can show it next to the button.
+  const saveTaskField = async (
+    taskId: string,
+    changes: { storyPoints?: StoryPointValue; priority?: Task["priority"] },
+  ) => {
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(changes),
+      });
+    } catch {
+      throw new Error("We could not reach the server, so nothing was saved.");
+    }
+    if (!response.ok) {
+      throw new Error(await failureMessage(response, "We could not save that. Please try again."));
+    }
+    setTasks((prev) => prev.map((t) => (t._id === taskId ? { ...t, ...changes } : t)));
+  };
+
+  // The plain story-point picker on a card (works without the AI).
+  const setTaskPoints = async (taskId: string, points: StoryPointValue) => {
+    try {
+      await saveTaskField(taskId, { storyPoints: points });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "We could not save the story points.");
+    }
+  };
+
+  // Editing a task's title, description and priority on its card (managers and admins only).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editPriority, setEditPriority] = useState<Task["priority"]>("medium");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const startEdit = (task: Task) => {
+    setEditingId(task._id);
+    setEditTitle(task.title);
+    setEditDescription(task.description ?? "");
+    setEditPriority(task.priority);
+  };
+
+  const saveEdit = async (task: Task) => {
+    const newTitle = editTitle.trim();
+    if (!newTitle) {
+      alert("Please enter a task title.");
+      return;
+    }
+    // Only what changed is sent. Managers only; the backend checks too.
+    const changes: Partial<Pick<Task, "title" | "description" | "priority">> = {};
+    if (newTitle !== task.title) changes.title = newTitle;
+    if (editDescription.trim() !== (task.description ?? "")) changes.description = editDescription.trim();
+    if (editPriority !== task.priority) changes.priority = editPriority;
+    if (Object.keys(changes).length === 0) {
+      setEditingId(null);
+      return;
+    }
+    try {
+      setSavingEdit(true);
+      const response = await fetch(`${API_URL}/tasks/${task._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(changes),
+      });
+      if (!response.ok) {
+        alert(await failureMessage(response, "We could not save your changes."));
+        return;
+      }
+      setTasks((prev) => prev.map((t) => (t._id === task._id ? { ...t, ...changes } : t)));
+      setEditingId(null);
+    } catch {
+      alert("We could not reach the server, so nothing was saved.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Deleting: managers and admins delete at once (any unfinished task);
+  // developers and testers ask a manager, and only for a task still in To Do.
+  // The same rules as the Scrum board; the backend sends the request for approval.
+  const { pendingDeleteIds, declinedDeleteIds, markRequested } = usePendingDeletes(
+    projectId,
+    !canAssignOthers,
+  );
+  const canDelete = (task: Task) => (canAssignOthers ? task.status !== "done" : task.status === "todo");
+
+  const removeTask = async (task: Task) => {
+    const question = canAssignOthers
+      ? `Delete “${task.title}”? This cannot be undone.`
+      : `Ask a manager to delete “${task.title}”?`;
+    if (!window.confirm(question)) return;
+    try {
+      const response = await fetch(`${API_URL}/tasks/${task._id}`, { method: "DELETE" });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        alert(result?.message || "Failed to delete the task.");
+        return;
+      }
+      if (result?.pendingApproval) {
+        markRequested(task._id);
+        alert(result.message);
+        return;
+      }
+      setTasks((prev) => prev.filter((t) => t._id !== task._id));
+    } catch {
+      alert("We could not reach the server, so the task was not deleted.");
+    }
+  };
+
+  // AI Task Suggestions: ideas for next tasks. A task is only created when
+  // someone clicks "Add to To Do" (a developer's goes to a manager for approval).
+  const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
+  const [addedSuggestions, setAddedSuggestions] = useState<Record<string, string>>({});
+
+  const addSuggestion = async (suggestion: TaskSuggestion) => {
+    if (!projectId || addingSuggestion) return;
+    const key = suggestion.title;
+    try {
+      setAddingSuggestion(key);
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: suggestion.title,
+          description: suggestion.description,
+          priority: suggestion.priority,
+          project: projectId,
+        }),
+      });
+      const created = await response.json().catch(() => null);
+      if (!response.ok) {
+        alert(created?.message || "Failed to add the suggested task.");
+        return;
+      }
+      setAddedSuggestions((prev) => ({
+        ...prev,
+        [key]: created?.pendingApproval ? "Sent to a manager for approval" : "Added to To Do",
+      }));
+      if (!created?.pendingApproval) await load();
+    } catch {
+      alert("We could not reach the server, so the task was not added.");
+    } finally {
+      setAddingSuggestion(null);
+    }
+  };
+
+  const renderSuggestionActions = (suggestion: TaskSuggestion) => {
+    const added = addedSuggestions[suggestion.title];
+    if (added) return <p className="scrum-suggestion-added">✓ {added}</p>;
+    return (
+      <div className="scrum-suggestion-actions">
+        <button
+          type="button"
+          className="primary-button"
+          disabled={addingSuggestion !== null}
+          onClick={() => addSuggestion(suggestion)}
+        >
+          {addingSuggestion === suggestion.title ? "Adding..." : "+ Add to To Do"}
+        </button>
+      </div>
+    );
+  };
+
+  // A tester found a problem in Review: back to In Progress, with a note for the assignee.
+  const sendBack = async (task: Task) => {
+    const comment = bounceText.trim();
+    if (!comment) {
+      alert("Please write what needs to be fixed, so the developer knows.");
+      return;
+    }
+    try {
+      setBounceBusy(true);
+      const response = await fetch(`${API_URL}/tasks/${task._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "in_progress", reviewComment: comment }),
+      });
+      if (!response.ok) {
+        alert(await failureMessage(response, "Could not send the task back."));
+        return;
+      }
+      setBouncingId(null);
+      setBounceText("");
+      await load();
+    } catch {
+      alert("We could not reach the server, so the task was not sent back.");
+    } finally {
+      setBounceBusy(false);
+    }
+  };
+
+  // Change who a task is assigned to (managers and admins only).
+  const reassign = async (taskId: string, personId: string) => {
+    const person = people.find((p) => p._id === personId);
+    const previous = tasks.find((t) => t._id === taskId)?.assignee;
+    const assigned: User | null = person ? { ...person } : null;
+
+    // Show the new assignee at once; put the old one back if saving fails.
+    setTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, assignee: assigned } : t))
+    );
+
+    const undo = () =>
+      setTasks((prev) =>
+        prev.map((t) => (t._id === taskId ? { ...t, assignee: previous } : t))
+      );
+
+    try {
+      const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignee: personId || null }),
+      });
+
+      if (!response.ok) {
+        undo();
+        alert(await failureMessage(response, "We could not change the assignee. Please try again."));
+      }
+    } catch {
+      undo();
+      alert("We could not reach the server, so the assignee was not changed.");
     }
   };
 
   const columns: { key: Task["status"]; label: string }[] = [
     { key: "todo", label: "Todo" },
     { key: "in_progress", label: "In Progress" },
+    { key: "review", label: "Review" },
     { key: "done", label: "Done" },
   ];
 
@@ -1410,9 +1826,71 @@ function KanbanBoardPage() {
           </p>
           <h1>Kanban Board</h1>
           <p className="page-description">
-            Continuous workflow — move tasks across columns as work
+            Continuous workflow — drag tasks across columns as work
             progresses.
           </p>
+          <p className="kanban-rules-hint">
+            Move your own tasks To Do → In Progress → Review. A tester, manager or admin signs
+            them off to Done, or sends them back with a note.
+          </p>
+
+          {/* WIP limit: everyone sees it; managers and admins can change it. */}
+          <div className="kanban-wip-setting">
+            {!editingLimit ? (
+              <>
+                <span>
+                  In Progress limit:{" "}
+                  <strong>{wipLimit > 0 ? `${wipLimit} task${wipLimit === 1 ? "" : "s"}` : "none"}</strong>
+                </span>
+                {canAssignOthers && (
+                  <button
+                    type="button"
+                    className="kanban-tools-toggle"
+                    onClick={() => {
+                      setLimitDraft(String(wipLimit));
+                      setEditingLimit(true);
+                    }}
+                  >
+                    {wipLimit > 0 ? "Change" : "Set a limit"}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <label htmlFor="kanban-wip-input">In Progress limit</label>
+                <input
+                  id="kanban-wip-input"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={limitDraft}
+                  onChange={(e) => setLimitDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveWipLimit();
+                    if (e.key === "Escape") setEditingLimit(false);
+                  }}
+                />
+                <span className="kanban-wip-hint">0 = no limit</span>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={saveWipLimit}
+                  disabled={savingLimit}
+                >
+                  {savingLimit ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setEditingLimit(false)}
+                  disabled={savingLimit}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="scrum-header-actions">
@@ -1424,71 +1902,160 @@ function KanbanBoardPage() {
               Reports
             </button>
           )}
-          <button className="primary-button" onClick={() => setShowForm(true)}>
-            + Create Task
-          </button>
+          {/* Hidden while the "Add a task" panel is open. */}
+          {!adding && (
+            <button className="primary-button" onClick={() => setAdding(true)}>
+              + Create Task
+            </button>
+          )}
         </div>
       </div>
 
-      {showForm && (
-        <div className="form-card">
-          <h2>Create Task</h2>
+      {adding && (
+        <section className="scrum-panel kanban-add-panel">
+          <div className="scrum-panel-header">
+            <h2>Add a task</h2>
+            <span className="scrum-panel-meta">Choose how</span>
+          </div>
 
-          <label>Title</label>
-          <input
-            type="text"
-            placeholder="Task title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-
-          <label>Description</label>
-          <textarea
-            placeholder="Task description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-
-          <label>Priority</label>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-
-          <label>Assignee</label>
-          <select
-            value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-          >
-            <option value="">Unassigned</option>
-            {users.map((user) => (
-              <option key={user._id} value={user._id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
-
-          <div className="form-actions">
+          <div className="scrum-add-options">
             <button
-              className="secondary-button"
-              onClick={() => setShowForm(false)}
+              type="button"
+              className={`scrum-add-option ${addMode === "ai" ? "selected" : ""}`}
+              aria-pressed={addMode === "ai"}
+              onClick={() => setAddMode(addMode === "ai" ? null : "ai")}
             >
-              Cancel
+              <strong>AI Suggestions</strong>
+              <span>Let AI suggest tasks based on this board</span>
             </button>
-
             <button
-              className="primary-button"
-              onClick={createTask}
-              disabled={creating}
+              type="button"
+              className={`scrum-add-option ${addMode === "manual" ? "selected" : ""}`}
+              aria-pressed={addMode === "manual"}
+              onClick={() => setAddMode(addMode === "manual" ? null : "manual")}
             >
-              {creating ? "Creating..." : "Create Task"}
+              <strong>+ Create New Task</strong>
+              <span>Create a task manually</span>
             </button>
           </div>
-        </div>
+
+          {addMode === "ai" && projectId && (
+            <div className="scrum-add-ai">
+              <TaskSuggestions
+                projectId={projectId}
+                subtitle="Ideas for next tasks, based on the tasks on this board."
+                renderActions={renderSuggestionActions}
+              />
+            </div>
+          )}
+
+          {addMode === "manual" && (
+            <div className="form-card kanban-add-form">
+
+              <label>Title</label>
+              <input
+                type="text"
+                placeholder="Task title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+
+              <label>Description</label>
+              <textarea
+                placeholder="Task description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+
+              <label>Priority</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+              {projectId && (
+                <PriorityRecommender
+                  projectId={projectId}
+                  title={title}
+                  description={description}
+                  currentPriority={priority as Task["priority"]}
+                  applyLabel="Use Recommendation"
+                  onApply={(value) => setPriority(value)}
+                />
+              )}
+
+              <label>Story points</label>
+              <select
+                value={storyPoints}
+                onChange={(e) => setStoryPoints(Number(e.target.value) as StoryPointValue)}
+              >
+                {STORY_POINT_SCALE.map((points) => (
+                  <option key={points} value={points}>
+                    {points === 0 ? "Not estimated" : points}
+                  </option>
+                ))}
+              </select>
+              {projectId && (
+                <StoryPointEstimator
+                  projectId={projectId}
+                  title={title}
+                  description={description}
+                  priority={priority as Task["priority"]}
+                  applyLabel="Use Estimate"
+                  onApply={(points) => setStoryPoints(points)}
+                />
+              )}
+
+              <label>Assignee</label>
+              <select
+                value={assignee}
+                onChange={(e) => setAssignee(e.target.value)}
+              >
+                {canAssignOthers ? (
+                  <>
+                    <option value="">Unassigned</option>
+                    {people.map((person) => (
+                      <option key={person._id} value={person._id}>
+                        {personLabel(person, currentUser._id)}
+                      </option>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <option value={currentUser._id}>Myself</option>
+                    <option value="">Unassigned</option>
+                  </>
+                )}
+              </select>
+
+              <div className="form-actions">
+                <button className="secondary-button" onClick={closeAddPanel}>
+                  Cancel
+                </button>
+
+                <button
+                  className="primary-button"
+                  onClick={createTask}
+                  disabled={creating}
+                >
+                  {creating ? "Creating..." : "Create Task"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* The manual form has its own Cancel button. */}
+          {addMode !== "manual" && (
+            <div className="kanban-add-close">
+              <button type="button" className="secondary-button" onClick={closeAddPanel}>
+                Close
+              </button>
+            </div>
+          )}
+        </section>
       )}
 
       {loading && (
@@ -1505,61 +2072,276 @@ function KanbanBoardPage() {
       )}
 
       {!loading && !error && (
-        <div className="kanban-board">
-          {columns.map((column) => {
-            const columnTasks = tasks.filter((t) => t.status === column.key);
-
-            return (
-              <div className="kanban-column" key={column.key}>
-                <div className="kanban-column-header">
-                  <span>{column.label}</span>
-                  <span className="kanban-column-count">
-                    {columnTasks.length}
-                  </span>
+        <KanbanDndBoard
+          columns={columns}
+          tasks={tasks}
+          onMove={(taskId, status) => moveTask(taskId, status as Task["status"])}
+          limits={{ in_progress: wipLimit }}
+          renderCard={(task, overlay) => (
+            <>
+              {!overlay && editingId === task._id ? (
+                // Editing: the form takes the place of the title and description.
+                <div
+                  className="kanban-edit"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  <input
+                    aria-label="Task title"
+                    value={editTitle}
+                    maxLength={200}
+                    autoFocus
+                    onChange={(e) => setEditTitle(e.target.value)}
+                  />
+                  <textarea
+                    aria-label="Task description"
+                    placeholder="Description"
+                    value={editDescription}
+                    rows={3}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                  />
+                  <select
+                    aria-label="Priority"
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as Task["priority"])}
+                  >
+                    <option value="low">Low priority</option>
+                    <option value="medium">Medium priority</option>
+                    <option value="high">High priority</option>
+                  </select>
+                  <div className="kanban-edit-actions">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={savingEdit}
+                      onClick={() => saveEdit(task)}
+                    >
+                      {savingEdit ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={savingEdit}
+                      onClick={() => setEditingId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <h3>{task.title}</h3>
+                  <p>{task.description || "No description"}</p>
+                </>
+              )}
 
-                <div className="kanban-column-body">
-                  {columnTasks.length === 0 && (
-                    <p className="kanban-empty">No tasks here</p>
+              <div className="task-card-meta">
+                <span className={`priority-badge priority-${task.priority}`}>
+                  {task.priority}
+                </span>
+                {task.assignee && (
+                  <span className="role-badge">{task.assignee.name}</span>
+                )}
+                {(task.storyPoints ?? 0) > 0 && (
+                  <span className="kanban-points-badge">
+                    {task.storyPoints} {task.storyPoints === 1 ? "pt" : "pts"}
+                  </span>
+                )}
+              </div>
+
+              {/* What the tester asked to fix, while the task is back in progress. */}
+              {task.reviewNote && task.status === "in_progress" && (
+                <p className="scrum-review-note">
+                  <strong>Sent back by {task.reviewNote.byName || "a tester"}</strong>
+                  {task.reviewNote.text}
+                </p>
+              )}
+
+              {/* One timer per task: the dragged copy doesn't get its own. */}
+              {!overlay && <TaskTimer task={task} />}
+
+              {!overlay && (
+                // Using these controls must not start dragging the card.
+                <div
+                  className="kanban-card-controls"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  {task.status === "review" && !signOff && (
+                    <p className="kanban-waiting">Waiting for a tester to sign off</p>
                   )}
 
-                  {columnTasks.map((task) => (
-                    <div className="kanban-card" key={task._id}>
-                      <h3>{task.title}</h3>
-                      <p>{task.description || "No description"}</p>
-
-                      <div className="task-card-meta">
-                        <span
-                          className={`priority-badge priority-${task.priority}`}
-                        >
-                          {task.priority}
-                        </span>
-                        {task.assignee && (
-                          <span className="role-badge">
-                            {task.assignee.name}
-                          </span>
-                        )}
+                  {/* A tester can send work back from Review, with a comment. */}
+                  {task.status === "review" && signOff && (
+                    bouncingId === task._id ? (
+                      <div className="scrum-bounce">
+                        <textarea
+                          aria-label={`What needs to be fixed in ${task.title}`}
+                          placeholder="What needs to be fixed?"
+                          value={bounceText}
+                          maxLength={1000}
+                          autoFocus
+                          onChange={(e) => setBounceText(e.target.value)}
+                        />
+                        <div className="scrum-bounce-actions">
+                          <button
+                            type="button"
+                            className="scrum-bounce-button"
+                            disabled={bounceBusy}
+                            onClick={() => sendBack(task)}
+                          >
+                            {bounceBusy ? "Sending…" : "Send back"}
+                          </button>
+                          <button
+                            type="button"
+                            className="sprint-card-backlog-button"
+                            disabled={bounceBusy}
+                            onClick={() => {
+                              setBouncingId(null);
+                              setBounceText("");
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-
-                      <TaskTimer task={task} />
-
-                      <select
-                        className="kanban-move-select"
-                        value={task.status}
-                        onChange={(e) =>
-                          moveTask(task._id, e.target.value as Task["status"])
-                        }
+                    ) : (
+                      <button
+                        type="button"
+                        className="scrum-bounce-button"
+                        onClick={() => {
+                          setBouncingId(task._id);
+                          setBounceText("");
+                        }}
                       >
-                        <option value="todo">Move to Todo</option>
-                        <option value="in_progress">Move to In Progress</option>
-                        <option value="done">Move to Done</option>
-                      </select>
+                        ↩ Found a bug? Send back
+                      </button>
+                    )
+                  )}
+
+                  {canAssignOthers && (
+                    <select
+                      className="kanban-assignee-select"
+                      aria-label={`Assignee of ${task.title}`}
+                      value={task.assignee?._id ?? ""}
+                      onChange={(e) => reassign(task._id, e.target.value)}
+                    >
+                      <option value="">Unassigned</option>
+                      {/* Keep the current assignee listed even if they have left the team. */}
+                      {task.assignee && !people.some((p) => p._id === task.assignee?._id) && (
+                        <option value={task.assignee._id}>{task.assignee.name}</option>
+                      )}
+                      {people.map((person) => (
+                        <option key={person._id} value={person._id}>
+                          {personLabel(person, currentUser._id)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {canEditPoints(task) && (
+                    <button
+                      type="button"
+                      className="kanban-tools-toggle"
+                      aria-expanded={toolsTaskId === task._id}
+                      onClick={() =>
+                        setToolsTaskId((open) => (open === task._id ? null : task._id))
+                      }
+                    >
+                      {toolsTaskId === task._id ? "Hide estimate & AI ▴" : "Estimate & AI ▾"}
+                    </button>
+                  )}
+
+                  {/* Edit (managers and admins) and delete (same rules as Scrum). */}
+                  {editingId !== task._id && (canAssignOthers || canDelete(task)) && (
+                    <div className="kanban-card-actions">
+                      {canAssignOthers && task.status !== "done" && (
+                        <button type="button" className="kanban-tools-toggle" onClick={() => startEdit(task)}>
+                          ✎ Edit
+                        </button>
+                      )}
+                      {canDelete(task) && (
+                        <button
+                          type="button"
+                          className="task-delete-button"
+                          onClick={() => removeTask(task)}
+                          disabled={
+                            !canAssignOthers &&
+                            (pendingDeleteIds.has(task._id) || declinedDeleteIds.has(task._id))
+                          }
+                        >
+                          {canAssignOthers
+                            ? "Delete"
+                            : declinedDeleteIds.has(task._id)
+                              ? "Deletion declined"
+                              : pendingDeleteIds.has(task._id)
+                                ? "Deletion requested"
+                                : "Request deletion"}
+                        </button>
+                      )}
                     </div>
-                  ))}
+                  )}
+
+                  {toolsTaskId === task._id && projectId && (
+                    <div className="kanban-tools-panel">
+                      {canEditPoints(task) && (
+                        <>
+                          <label className="kanban-tools-label">
+                            Story points
+                            <select
+                              value={task.storyPoints ?? 0}
+                              onChange={(e) =>
+                                setTaskPoints(task._id, Number(e.target.value) as StoryPointValue)
+                              }
+                            >
+                              {STORY_POINT_SCALE.map((points) => (
+                                <option key={points} value={points}>
+                                  {points === 0 ? "Not estimated" : points}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <StoryPointEstimator
+                            projectId={projectId}
+                            title={task.title}
+                            description={task.description}
+                            priority={task.priority}
+                            taskId={task._id}
+                            savedStoryPoints={task.storyPoints}
+                            applyLabel="Save Estimate"
+                            appliedText={(points) => `Saved ${points} story points.`}
+                            onApply={(points) => saveTaskField(task._id, { storyPoints: points })}
+                          />
+                        </>
+                      )}
+
+                      {/* Only managers and admins may change a task's priority. */}
+                      {canAssignOthers && (
+                        <PriorityRecommender
+                          projectId={projectId}
+                          title={task.title}
+                          description={task.description}
+                          taskId={task._id}
+                          currentPriority={task.priority}
+                          applyLabel="Save Priority"
+                          appliedText={(value) => `Priority set to ${value}.`}
+                          onApply={(value) => saveTaskField(task._id, { priority: value })}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
+              )}
+            </>
+          )}
+        />
+      )}
+
+      {/* AI Kanban Insights: board health, bottlenecks and next steps (including Review). */}
+      {!loading && !error && projectId && (
+        <div className="kanban-insights-slot">
+          <KanbanInsights projectId={projectId} reviewEnabled={true} />
         </div>
       )}
     </div>
@@ -1698,17 +2480,17 @@ function App() {
 
           <Route
             path="/projects/:projectId/backlog"
-            element={<NotForAdmin><BacklogPage /></NotForAdmin>}
+            element={<NotForAdmin><ScrumOnly><BacklogPage /></ScrumOnly></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/sprints"
-            element={<NotForAdmin><SprintPage /></NotForAdmin>}
+            element={<NotForAdmin><ScrumOnly><SprintPage /></ScrumOnly></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/tasks/new"
-            element={<NotForAdmin><NewTaskPage /></NotForAdmin>}
+            element={<NotForAdmin><ScrumOnly createTask><NewTaskPage /></ScrumOnly></NotForAdmin>}
           />
 
           <Route

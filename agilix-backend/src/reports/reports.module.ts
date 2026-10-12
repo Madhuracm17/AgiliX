@@ -5,6 +5,8 @@ import { Sprint, SprintSchema } from '../sprints/schemas/sprint.schema';
 import { TimeEntry, TimeEntrySchema } from '../time-entries/schemas/time-entry.schema';
 import { ReportsService } from './reports.service';
 import { ReportsController } from './reports.controller';
+import { KanbanReportsService } from './kanban-reports.service';
+import { KanbanReportsController } from './kanban-reports.controller';
 
 @Module({
   imports: [
@@ -14,7 +16,7 @@ import { ReportsController } from './reports.controller';
       { name: TimeEntry.name, schema: TimeEntrySchema },
     ]),
   ],
-  controllers: [ReportsController],
-  providers: [ReportsService],
+  controllers: [ReportsController, KanbanReportsController],
+  providers: [ReportsService, KanbanReportsService],
 })
 export class ReportsModule {}

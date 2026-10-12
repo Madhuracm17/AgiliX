@@ -26,17 +26,18 @@ function saveLastProject(storageKey: string, projectId: string) {
   try {
     localStorage.setItem(storageKey, projectId);
   } catch {
-    // Storage can be blocked; "Scrum Board" then opens the first project instead.
+    // Storage can be blocked; the board link then opens the first project instead.
   }
 }
 
 /**
  * The menu that slides in from the left when the three-line button in the top bar
- * is pressed (like the Gmail menu): Dashboard, Scrum Board, Team Members and
+ * is pressed (like the Gmail menu): Dashboard, the board, Team Members and
  * All Projects (admins get only Team Members and All Projects), with every project listed under All Projects.
  *
- * Scrum Board opens the board of the project the person looked at last (or the
- * first project if they have not opened one yet).
+ * The board link opens the board of the project the person looked at last (or the
+ * first project if they have not opened one yet), and is named after it:
+ * "Kanban Board" or "Scrum Board".
  */
 export default function SideMenu({ open, onClose }: SideMenuProps) {
   const { user } = useAuth();
@@ -101,6 +102,12 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
   const boardTarget =
     projects.find((p) => p._id === lastProjectId) ?? projects[0] ?? null;
   const onBoard = /^\/projects\/[^/]+\/(sprints|kanban)$/.test(location.pathname);
+  // Named after the board it opens: Kanban projects have a Kanban Board, Scrum projects a Scrum Board.
+  const boardLabel = !boardTarget
+    ? "Board"
+    : (boardTarget.methodology ?? "scrum") === "kanban"
+      ? "Kanban Board"
+      : "Scrum Board";
 
   const openBoard = () => {
     // With no project yet, the Projects page explains what to do.
@@ -144,7 +151,7 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
                 className={`side-menu-link ${onBoard ? "active" : ""}`}
                 onClick={openBoard}
               >
-                Scrum Board
+                {boardLabel}
               </button>
             </>
           )}
