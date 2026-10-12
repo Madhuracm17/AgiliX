@@ -10,11 +10,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const KANBAN_REPORT_RANGES = [14, 30, 90] as const;
 const DEFAULT_DAYS = 30;
 
-/** The three Kanban columns. A task in Review (Scrum only) counts as In Progress. */
-type Column = 'todo' | 'inProgress' | 'done';
+/** The four Kanban columns. */
+type Column = 'todo' | 'inProgress' | 'review' | 'done';
 
 const columnOf = (status: string | undefined): Column =>
-  status === TaskStatus.DONE ? 'done' : status === TaskStatus.TODO || !status ? 'todo' : 'inProgress';
+  status === TaskStatus.DONE
+    ? 'done'
+    : status === TaskStatus.REVIEW
+      ? 'review'
+      : status === TaskStatus.IN_PROGRESS
+        ? 'inProgress'
+        : 'todo';
 
 /** One moment a task entered a column. */
 interface Move {
@@ -39,6 +45,7 @@ export interface CfdDay {
   date: string;
   todo: number;
   inProgress: number;
+  review: number;
   done: number;
 }
 
@@ -114,7 +121,8 @@ function stats(durations: number[]): DurationStats {
  * Kanban reports: cumulative flow, throughput, lead time and cycle time.
  *
  * - Lead time: created → Done (how long the requester waits).
- * - Cycle time: first In Progress → Done (how long the work itself takes).
+ * - Cycle time: first In Progress → Done (how long the work itself takes,
+ *   review included).
  * - Throughput: tasks finished per week.
  * - Cumulative flow: how many tasks sat in each column at the end of each day.
  *
@@ -152,7 +160,7 @@ export class KanbanReportsService {
     const cumulativeFlow: CfdDay[] = [];
     for (let day = from; day <= today; day += DAY_MS) {
       const end = Math.min(day + DAY_MS - 1, now);
-      const counts = { todo: 0, inProgress: 0, done: 0 };
+      const counts = { todo: 0, inProgress: 0, review: 0, done: 0 };
       for (const t of timelines) {
         const column = this.columnAt(t, end);
         if (column) counts[column] += 1;
@@ -236,9 +244,10 @@ export class KanbanReportsService {
       const doneAt = current === 'done' ? (time(task.completedAt) ?? fallback) : null;
       if (startedAt !== null && (doneAt === null || startedAt <= doneAt)) {
         moves.push({ at: startedAt, column: 'inProgress' });
-      } else if (current === 'inProgress') {
+      } else if (current === 'inProgress' || current === 'review') {
         moves.push({ at: fallback, column: 'inProgress' });
       }
+      if (current === 'review') moves.push({ at: fallback, column: 'review' });
       if (doneAt !== null) moves.push({ at: doneAt, column: 'done' });
       moves = moves.sort((a, b) => a.at - b.at);
     }

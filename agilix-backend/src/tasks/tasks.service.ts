@@ -80,7 +80,8 @@ export class TasksService {
       const before = await this.taskModel.findById(id).select('status sprint startedAt').lean().exec();
       sentBack = await this.checkStatusFlow(id, dto.status, reviewComment, role, userId);
       if (dto.status === TaskStatus.IN_PROGRESS) await this.checkWipLimit(id);
-      if (userId && before?.sprint && before.status === TaskStatus.REVIEW) {
+      // Leaving Review (Scrum sprint or Kanban board) is a review: approved or sent back.
+      if (userId && before?.status === TaskStatus.REVIEW) {
         if (dto.status === TaskStatus.DONE) review = { by: userId, outcome: 'approved', at: new Date() };
         if (dto.status === TaskStatus.IN_PROGRESS) review = { by: userId, outcome: 'sent_back', at: new Date() };
       }
@@ -207,10 +208,10 @@ export class TasksService {
   }
 
   /**
-   * Tasks inside a sprint (Scrum) move To Do → In Progress → Review → Done, one
-   * step at a time. The only step back is Review → In Progress, by a tester,
-   * manager or admin, with a comment. Tasks without a sprint (backlog and
-   * Kanban tasks) are not affected, so the Kanban board works as before.
+   * Tasks on a board move To Do → In Progress → Review → Done, one step at a
+   * time. The only step back is Review → In Progress, by a tester, manager or
+   * admin, with a comment. This covers tasks in a sprint (Scrum) and every task
+   * of a Kanban project. Scrum backlog tasks (no sprint yet) are not affected.
    */
   private async checkStatusFlow(
     id: string,
@@ -225,7 +226,12 @@ export class TasksService {
 
     const current = await this.taskModel.findById(id).select('status sprint assignee title project');
     if (!current) throw new NotFoundException('Task not found');
-    if (!current.sprint || current.status === status) return null;
+    if (current.status === status) return null;
+    if (!current.sprint) {
+      // Not in a sprint: only a Kanban project's tasks follow the board rules.
+      const project = await this.projectModel.findById(current.project).select('methodology').lean().exec();
+      if (project?.methodology !== 'kanban') return null;
+    }
 
     // The one step backwards: a tester (or manager or admin) finds a problem in
     // Review and sends the task back to In Progress, with a comment for the assignee.
@@ -255,7 +261,7 @@ export class TasksService {
     }
     if (status !== next) {
       throw new BadRequestException(
-        `Sprint tasks move one step at a time: ${STATUS_LABELS[current.status]} → ${STATUS_LABELS[next]}.`,
+        `Tasks move one step at a time: ${STATUS_LABELS[current.status]} → ${STATUS_LABELS[next]}.`,
       );
     }
     if (status === TaskStatus.DONE) {
