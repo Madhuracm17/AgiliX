@@ -238,3 +238,49 @@
   justify-content: flex-end;
   margin-top: 12px;
 }
+
+/* Editing a task on its card. */
+.kanban-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+}
+
+.kanban-edit input,
+.kanban-edit textarea,
+.kanban-edit select {
+  border: 1px solid #ddd5c0;
+  border-radius: 7px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+  background: #ffffff;
+}
+
+.kanban-edit textarea {
+  resize: vertical;
+}
+
+.kanban-edit-actions,
+.kanban-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kanban-edit-actions button {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.kanban-card-actions .task-delete-button {
+  margin-left: auto;
+  padding: 4px 10px;
+}
+
+.kanban-card-actions .task-delete-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

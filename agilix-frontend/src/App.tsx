@@ -28,6 +28,7 @@ import StoryPointEstimator from "./components/ai/StoryPointEstimator";
 import PriorityRecommender from "./components/ai/PriorityRecommender";
 import KanbanInsights from "./components/ai/KanbanInsights";
 import TaskSuggestions from "./components/ai/TaskSuggestions";
+import { usePendingDeletes } from "./components/approvals/usePendingDeletes";
 import { STORY_POINT_SCALE, type StoryPointValue, type TaskSuggestion } from "./api/ai";
 import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
 import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
@@ -1610,6 +1611,87 @@ function KanbanBoardPage() {
     }
   };
 
+  // Editing a task's title, description (and, for managers, priority) on its card.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editPriority, setEditPriority] = useState<Task["priority"]>("medium");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const startEdit = (task: Task) => {
+    setEditingId(task._id);
+    setEditTitle(task.title);
+    setEditDescription(task.description ?? "");
+    setEditPriority(task.priority);
+  };
+
+  const saveEdit = async (task: Task) => {
+    const newTitle = editTitle.trim();
+    if (!newTitle) {
+      alert("Please enter a task title.");
+      return;
+    }
+    // Only what changed is sent; priority only by managers (the backend checks too).
+    const changes: Partial<Pick<Task, "title" | "description" | "priority">> = {};
+    if (newTitle !== task.title) changes.title = newTitle;
+    if (editDescription.trim() !== (task.description ?? "")) changes.description = editDescription.trim();
+    if (canAssignOthers && editPriority !== task.priority) changes.priority = editPriority;
+    if (Object.keys(changes).length === 0) {
+      setEditingId(null);
+      return;
+    }
+    try {
+      setSavingEdit(true);
+      const response = await fetch(`${API_URL}/tasks/${task._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(changes),
+      });
+      if (!response.ok) {
+        alert(await failureMessage(response, "We could not save your changes."));
+        return;
+      }
+      setTasks((prev) => prev.map((t) => (t._id === task._id ? { ...t, ...changes } : t)));
+      setEditingId(null);
+    } catch {
+      alert("We could not reach the server, so nothing was saved.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Deleting: managers and admins delete at once (any unfinished task);
+  // developers and testers ask a manager, and only for a task still in To Do.
+  // The same rules as the Scrum board; the backend sends the request for approval.
+  const { pendingDeleteIds, declinedDeleteIds, markRequested } = usePendingDeletes(
+    projectId,
+    !canAssignOthers,
+  );
+  const canDelete = (task: Task) => (canAssignOthers ? task.status !== "done" : task.status === "todo");
+
+  const removeTask = async (task: Task) => {
+    const question = canAssignOthers
+      ? `Delete “${task.title}”? This cannot be undone.`
+      : `Ask a manager to delete “${task.title}”?`;
+    if (!window.confirm(question)) return;
+    try {
+      const response = await fetch(`${API_URL}/tasks/${task._id}`, { method: "DELETE" });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        alert(result?.message || "Failed to delete the task.");
+        return;
+      }
+      if (result?.pendingApproval) {
+        markRequested(task._id);
+        alert(result.message);
+        return;
+      }
+      setTasks((prev) => prev.filter((t) => t._id !== task._id));
+    } catch {
+      alert("We could not reach the server, so the task was not deleted.");
+    }
+  };
+
   // AI Task Suggestions: ideas for next tasks. A task is only created when
   // someone clicks "Add to To Do" (a developer's goes to a manager for approval).
   const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
@@ -1997,8 +2079,63 @@ function KanbanBoardPage() {
           limits={{ in_progress: wipLimit }}
           renderCard={(task, overlay) => (
             <>
-              <h3>{task.title}</h3>
-              <p>{task.description || "No description"}</p>
+              {!overlay && editingId === task._id ? (
+                // Editing: the form takes the place of the title and description.
+                <div
+                  className="kanban-edit"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  <input
+                    aria-label="Task title"
+                    value={editTitle}
+                    maxLength={200}
+                    autoFocus
+                    onChange={(e) => setEditTitle(e.target.value)}
+                  />
+                  <textarea
+                    aria-label="Task description"
+                    placeholder="Description"
+                    value={editDescription}
+                    rows={3}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                  />
+                  {canAssignOthers && (
+                    <select
+                      aria-label="Priority"
+                      value={editPriority}
+                      onChange={(e) => setEditPriority(e.target.value as Task["priority"])}
+                    >
+                      <option value="low">Low priority</option>
+                      <option value="medium">Medium priority</option>
+                      <option value="high">High priority</option>
+                    </select>
+                  )}
+                  <div className="kanban-edit-actions">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={savingEdit}
+                      onClick={() => saveEdit(task)}
+                    >
+                      {savingEdit ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={savingEdit}
+                      onClick={() => setEditingId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h3>{task.title}</h3>
+                  <p>{task.description || "No description"}</p>
+                </>
+              )}
 
               <div className="task-card-meta">
                 <span className={`priority-badge priority-${task.priority}`}>
@@ -2115,6 +2252,36 @@ function KanbanBoardPage() {
                     >
                       {toolsTaskId === task._id ? "Hide estimate & AI ▴" : "Estimate & AI ▾"}
                     </button>
+                  )}
+
+                  {/* Edit (assignee or manager) and delete (same rules as Scrum). */}
+                  {editingId !== task._id && (canEditPoints(task) || canDelete(task)) && (
+                    <div className="kanban-card-actions">
+                      {canEditPoints(task) && task.status !== "done" && (
+                        <button type="button" className="kanban-tools-toggle" onClick={() => startEdit(task)}>
+                          ✎ Edit
+                        </button>
+                      )}
+                      {canDelete(task) && (
+                        <button
+                          type="button"
+                          className="task-delete-button"
+                          onClick={() => removeTask(task)}
+                          disabled={
+                            !canAssignOthers &&
+                            (pendingDeleteIds.has(task._id) || declinedDeleteIds.has(task._id))
+                          }
+                        >
+                          {canAssignOthers
+                            ? "Delete"
+                            : declinedDeleteIds.has(task._id)
+                              ? "Deletion declined"
+                              : pendingDeleteIds.has(task._id)
+                                ? "Deletion requested"
+                                : "Request deletion"}
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {toolsTaskId === task._id && projectId && (
