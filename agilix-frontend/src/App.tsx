@@ -23,6 +23,10 @@ import AdminTeamPage from "./components/team/AdminTeamPage";
 import KanbanDndBoard from "./components/kanban/KanbanDndBoard";
 import { personLabel, useProjectPeople } from "./components/team/useProjectPeople";
 import { canEditTaskPlan } from "./components/scrum/taskDisplay";
+import StoryPointEstimator from "./components/ai/StoryPointEstimator";
+import PriorityRecommender from "./components/ai/PriorityRecommender";
+import KanbanInsights from "./components/ai/KanbanInsights";
+import { STORY_POINT_SCALE, type StoryPointValue } from "./api/ai";
 import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
 import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
 import { PROJECT_STATUS_LABELS, type ProjectStatus } from "./api/projects";
@@ -1303,6 +1307,10 @@ function KanbanBoardPage() {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
   const [assignee, setAssignee] = useState(canAssignOthers ? "" : currentUser._id);
+  // 0 = not estimated yet.
+  const [storyPoints, setStoryPoints] = useState<StoryPointValue>(0);
+  // The card whose "AI & estimate" panel is open, if any.
+  const [toolsTaskId, setToolsTaskId] = useState<string | null>(null);
 
   const load = async () => {
     if (!projectId) return;
@@ -1349,6 +1357,7 @@ function KanbanBoardPage() {
           project: projectId,
           priority,
           assignee: assignee || undefined,
+          storyPoints,
         }),
       });
 
@@ -1363,6 +1372,7 @@ function KanbanBoardPage() {
       setDescription("");
       setPriority("medium");
       setAssignee(canAssignOthers ? "" : currentUser._id);
+      setStoryPoints(0);
       setShowForm(false);
 
       await load();
@@ -1394,6 +1404,37 @@ function KanbanBoardPage() {
     } catch {
       alert("We could not reach the server, so the task was not moved.");
       await load();
+    }
+  };
+
+  // Save story points or priority for one task. Throws with the server's
+  // message on failure, so the AI panels can show it next to the button.
+  const saveTaskField = async (
+    taskId: string,
+    changes: { storyPoints?: StoryPointValue; priority?: Task["priority"] },
+  ) => {
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(changes),
+      });
+    } catch {
+      throw new Error("We could not reach the server, so nothing was saved.");
+    }
+    if (!response.ok) {
+      throw new Error(await failureMessage(response, "We could not save that. Please try again."));
+    }
+    setTasks((prev) => prev.map((t) => (t._id === taskId ? { ...t, ...changes } : t)));
+  };
+
+  // The plain story-point picker on a card (works without the AI).
+  const setTaskPoints = async (taskId: string, points: StoryPointValue) => {
+    try {
+      await saveTaskField(taskId, { storyPoints: points });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "We could not save the story points.");
     }
   };
 
@@ -1496,6 +1537,38 @@ function KanbanBoardPage() {
             <option value="medium">Medium</option>
             <option value="high">High</option>
           </select>
+          {projectId && (
+            <PriorityRecommender
+              projectId={projectId}
+              title={title}
+              description={description}
+              currentPriority={priority as Task["priority"]}
+              applyLabel="Use Recommendation"
+              onApply={(value) => setPriority(value)}
+            />
+          )}
+
+          <label>Story points</label>
+          <select
+            value={storyPoints}
+            onChange={(e) => setStoryPoints(Number(e.target.value) as StoryPointValue)}
+          >
+            {STORY_POINT_SCALE.map((points) => (
+              <option key={points} value={points}>
+                {points === 0 ? "Not estimated" : points}
+              </option>
+            ))}
+          </select>
+          {projectId && (
+            <StoryPointEstimator
+              projectId={projectId}
+              title={title}
+              description={description}
+              priority={priority as Task["priority"]}
+              applyLabel="Use Estimate"
+              onApply={(points) => setStoryPoints(points)}
+            />
+          )}
 
           <label>Assignee</label>
           <select
@@ -1568,36 +1641,111 @@ function KanbanBoardPage() {
                 {task.assignee && (
                   <span className="role-badge">{task.assignee.name}</span>
                 )}
+                {(task.storyPoints ?? 0) > 0 && (
+                  <span className="kanban-points-badge">
+                    {task.storyPoints} {task.storyPoints === 1 ? "pt" : "pts"}
+                  </span>
+                )}
               </div>
 
               {/* One timer per task: the dragged copy doesn't get its own. */}
               {!overlay && <TaskTimer task={task} />}
 
-              {!overlay && canAssignOthers && (
-                <select
-                  className="kanban-assignee-select"
-                  aria-label={`Assignee of ${task.title}`}
-                  value={task.assignee?._id ?? ""}
-                  onChange={(e) => reassign(task._id, e.target.value)}
-                  // Using the dropdown must not start dragging the card.
+              {!overlay && (
+                // Using these controls must not start dragging the card.
+                <div
+                  className="kanban-card-controls"
                   onMouseDown={(e) => e.stopPropagation()}
                   onTouchStart={(e) => e.stopPropagation()}
                 >
-                  <option value="">Unassigned</option>
-                  {/* Keep the current assignee listed even if they have left the team. */}
-                  {task.assignee && !people.some((p) => p._id === task.assignee?._id) && (
-                    <option value={task.assignee._id}>{task.assignee.name}</option>
+                  {canAssignOthers && (
+                    <select
+                      className="kanban-assignee-select"
+                      aria-label={`Assignee of ${task.title}`}
+                      value={task.assignee?._id ?? ""}
+                      onChange={(e) => reassign(task._id, e.target.value)}
+                    >
+                      <option value="">Unassigned</option>
+                      {/* Keep the current assignee listed even if they have left the team. */}
+                      {task.assignee && !people.some((p) => p._id === task.assignee?._id) && (
+                        <option value={task.assignee._id}>{task.assignee.name}</option>
+                      )}
+                      {people.map((person) => (
+                        <option key={person._id} value={person._id}>
+                          {personLabel(person, currentUser._id)}
+                        </option>
+                      ))}
+                    </select>
                   )}
-                  {people.map((person) => (
-                    <option key={person._id} value={person._id}>
-                      {personLabel(person, currentUser._id)}
-                    </option>
-                  ))}
-                </select>
+
+                  <button
+                    type="button"
+                    className="kanban-tools-toggle"
+                    aria-expanded={toolsTaskId === task._id}
+                    onClick={() =>
+                      setToolsTaskId((open) => (open === task._id ? null : task._id))
+                    }
+                  >
+                    {toolsTaskId === task._id ? "Hide estimate & AI ▴" : "Estimate & AI ▾"}
+                  </button>
+
+                  {toolsTaskId === task._id && projectId && (
+                    <div className="kanban-tools-panel">
+                      <label className="kanban-tools-label">
+                        Story points
+                        <select
+                          value={task.storyPoints ?? 0}
+                          onChange={(e) =>
+                            setTaskPoints(task._id, Number(e.target.value) as StoryPointValue)
+                          }
+                        >
+                          {STORY_POINT_SCALE.map((points) => (
+                            <option key={points} value={points}>
+                              {points === 0 ? "Not estimated" : points}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <StoryPointEstimator
+                        projectId={projectId}
+                        title={task.title}
+                        description={task.description}
+                        priority={task.priority}
+                        taskId={task._id}
+                        savedStoryPoints={task.storyPoints}
+                        applyLabel="Save Estimate"
+                        appliedText={(points) => `Saved ${points} story points.`}
+                        onApply={(points) => saveTaskField(task._id, { storyPoints: points })}
+                      />
+
+                      {/* Only managers and admins may change a task's priority. */}
+                      {canAssignOthers && (
+                        <PriorityRecommender
+                          projectId={projectId}
+                          title={task.title}
+                          description={task.description}
+                          taskId={task._id}
+                          currentPriority={task.priority}
+                          applyLabel="Save Priority"
+                          appliedText={(value) => `Priority set to ${value}.`}
+                          onApply={(value) => saveTaskField(task._id, { priority: value })}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}
         />
+      )}
+
+      {/* AI Kanban Insights: board health, bottlenecks and next steps. This board has no Review column. */}
+      {!loading && !error && projectId && (
+        <div className="kanban-insights-slot">
+          <KanbanInsights projectId={projectId} reviewEnabled={false} />
+        </div>
       )}
     </div>
   );

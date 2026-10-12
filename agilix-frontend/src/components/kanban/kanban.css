@@ -66,3 +66,74 @@
   font-size: 12px;
   color: #4a4f46;
 }
+
+/* Story points on a card. */
+.kanban-points-badge {
+  background: var(--mustard-tint, #f6ecd0);
+  color: var(--mustard-dark, #8a6a1f);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Assignee, estimate and AI controls at the bottom of a card. */
+.kanban-card-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: default;
+}
+
+.kanban-tools-toggle {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sage, #6f8460);
+  cursor: pointer;
+}
+
+.kanban-tools-toggle:hover {
+  text-decoration: underline;
+}
+
+.kanban-tools-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid #eee7d6;
+  padding-top: 10px;
+}
+
+.kanban-tools-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a4f46;
+}
+
+.kanban-tools-label select {
+  border: 1px solid #ddd5c0;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* The AI panels are sized for wide forms; keep them inside the card. */
+.kanban-tools-panel .sp-estimator {
+  max-width: 100%;
+}
+
+/* AI Kanban Insights under the board. */
+.kanban-insights-slot {
+  margin-top: 24px;
+}
