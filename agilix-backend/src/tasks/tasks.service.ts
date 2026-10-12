@@ -73,13 +73,20 @@ export class TasksService {
     let sentBack: { assignee: string | null; title: string; project: string } | null = null;
     // Who looked at a task in Review, so the reviewer's report can count it.
     let review: { by: string; outcome: 'approved' | 'sent_back'; at: Date } | null = null;
+    // A real column change, recorded for the Kanban reports.
+    let moved: { status: TaskStatus; at: Date } | null = null;
+    let firstStart = false;
     if (dto.status !== undefined) {
-      const before = await this.taskModel.findById(id).select('status sprint').lean().exec();
+      const before = await this.taskModel.findById(id).select('status sprint startedAt').lean().exec();
       sentBack = await this.checkStatusFlow(id, dto.status, reviewComment, role, userId);
       if (dto.status === TaskStatus.IN_PROGRESS) await this.checkWipLimit(id);
       if (userId && before?.sprint && before.status === TaskStatus.REVIEW) {
         if (dto.status === TaskStatus.DONE) review = { by: userId, outcome: 'approved', at: new Date() };
         if (dto.status === TaskStatus.IN_PROGRESS) review = { by: userId, outcome: 'sent_back', at: new Date() };
+      }
+      if (before && before.status !== dto.status) {
+        moved = { status: dto.status, at: new Date() };
+        firstStart = dto.status === TaskStatus.IN_PROGRESS && !before.startedAt;
       }
     }
 
@@ -105,8 +112,13 @@ export class TasksService {
     if (dto.sprint !== undefined) {
       changes.addedToSprintAt = dto.sprint ? new Date() : null;
     }
+    if (firstStart && moved) changes.startedAt = moved.at;
 
-    const update: Record<string, unknown> = review ? { ...changes, $push: { reviews: review } } : changes;
+    const push: Record<string, unknown> = {};
+    if (review) push.reviews = review;
+    if (moved) push.statusHistory = moved;
+    const update: Record<string, unknown> =
+      Object.keys(push).length > 0 ? { ...changes, $push: push } : changes;
     const task = await this.taskModel.findByIdAndUpdate(id, update, { new: true });
     if (!task) throw new NotFoundException('Task not found');
 

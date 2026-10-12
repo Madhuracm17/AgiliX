@@ -59,6 +59,17 @@ export class Task {
   @Prop({ type: Date, default: null })
   completedAt?: Date | null;
 
+  // When the task first moved to In Progress (kept if it later goes back).
+  // Cycle time in the Kanban reports runs from here to Done. Older tasks have no value.
+  @Prop({ type: Date, default: null })
+  startedAt?: Date | null;
+
+  // Every column change, oldest first: the Kanban cumulative flow diagram is
+  // rebuilt from it. The task's start in To Do is its createdAt, so creation
+  // adds no entry. Older tasks have an empty list.
+  @Prop({ type: [{ status: { type: String, enum: TaskStatus }, at: Date, _id: false }], default: [] })
+  statusHistory?: { status: TaskStatus; at: Date }[];
+
   // When the task was put into its current sprint. Tasks added after the
   // sprint started count as scope changes in the reports.
   @Prop({ type: Date, default: null })

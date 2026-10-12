@@ -279,3 +279,16 @@
   font-size: 13px;
   background: #ffffff;
 }
+
+/* Kanban reports */
+.rpt-note {
+  margin: 10px 0 0;
+  color: #7d8172;
+  font-size: 12px;
+}
+
+.rpt-hover-readout {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #4a4f46;
+}
