@@ -1,0 +1,68 @@
+/* Kanban drag-and-drop (B1). Base column and card styles live in index.css and theme-colors.css. */
+
+.kanban-card-draggable {
+  cursor: grab;
+  transition: box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.kanban-card-draggable:hover {
+  box-shadow: 0 2px 8px rgba(40, 45, 35, 0.08);
+}
+
+.kanban-card-draggable:focus-visible {
+  outline: 2px solid var(--sage, #7a8f6a);
+  outline-offset: 2px;
+}
+
+/* The card's place in its column while its copy is being dragged. */
+.kanban-card-dragging {
+  opacity: 0.35;
+}
+
+/* The copy that follows the pointer. */
+.kanban-card-overlay {
+  cursor: grabbing;
+  box-shadow: 0 12px 28px rgba(40, 45, 35, 0.22);
+  transform: rotate(1.5deg);
+}
+
+/* While dragging, every column gets a soft edge; the one under the card is highlighted. */
+.kanban-column {
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.kanban-column-droppable {
+  box-shadow: inset 0 0 0 2px var(--sage-tint, #e3e9dc);
+}
+
+.kanban-column-over {
+  background: var(--sage-tint, #e3e9dc);
+  box-shadow: inset 0 0 0 2px var(--sage-border, #b9c6ac);
+}
+
+/* Empty columns stay tall enough to drop into. */
+.kanban-column-body {
+  min-height: 120px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kanban-card-draggable,
+  .kanban-column {
+    transition: none;
+  }
+  .kanban-card-overlay {
+    transform: none;
+  }
+}
+
+/* Assignee dropdown on a card (managers and admins). */
+.kanban-assignee-select {
+  width: 100%;
+  border: 1px solid #ddd5c0;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: #4a4f46;
+}

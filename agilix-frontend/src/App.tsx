@@ -20,6 +20,9 @@ import ProjectSettings from "./components/projects/ProjectSettings";
 import ApprovalsPage from "./components/approvals/ApprovalsPage";
 import TeamRequests from "./components/team/TeamRequests";
 import AdminTeamPage from "./components/team/AdminTeamPage";
+import KanbanDndBoard from "./components/kanban/KanbanDndBoard";
+import { personLabel, useProjectPeople } from "./components/team/useProjectPeople";
+import { canEditTaskPlan } from "./components/scrum/taskDisplay";
 import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
 import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
 import { PROJECT_STATUS_LABELS, type ProjectStatus } from "./api/projects";
@@ -1284,9 +1287,13 @@ function KanbanBoardPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+  // Managers and admins assign tasks to anyone on the team and can change the
+  // assignee later. Developers and testers create tasks for themselves (or
+  // unassigned), as on the Scrum side; the backend enforces the same rule.
+  const canAssignOthers = canEditTaskPlan(currentUser.role);
+  const people = useProjectPeople(canAssignOthers ? projectId : undefined);
 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -1295,7 +1302,7 @@ function KanbanBoardPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
-  const [assignee, setAssignee] = useState("");
+  const [assignee, setAssignee] = useState(canAssignOthers ? "" : currentUser._id);
 
   const load = async () => {
     if (!projectId) return;
@@ -1304,10 +1311,7 @@ function KanbanBoardPage() {
       setLoading(true);
       setError("");
 
-      const [taskRes, userRes] = await Promise.all([
-        fetch(`${API_URL}/tasks?project=${projectId}`),
-        fetch(`${API_URL}/users`),
-      ]);
+      const taskRes = await fetch(`${API_URL}/tasks?project=${projectId}`);
 
       if (!taskRes.ok) {
         throw new Error(
@@ -1316,10 +1320,6 @@ function KanbanBoardPage() {
       }
 
       setTasks(await taskRes.json());
-
-      if (userRes.ok) {
-        setUsers(await userRes.json());
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -1362,7 +1362,7 @@ function KanbanBoardPage() {
       setTitle("");
       setDescription("");
       setPriority("medium");
-      setAssignee("");
+      setAssignee(canAssignOthers ? "" : currentUser._id);
       setShowForm(false);
 
       await load();
@@ -1380,15 +1380,53 @@ function KanbanBoardPage() {
       prev.map((t) => (t._id === taskId ? { ...t, status } : t))
     );
 
-    const response = await fetch(`${API_URL}/tasks/${taskId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
+    try {
+      const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
 
-    if (!response.ok) {
-      alert("Failed to move task");
+      if (!response.ok) {
+        alert(await failureMessage(response, "We could not move the task. Please try again."));
+        await load();
+      }
+    } catch {
+      alert("We could not reach the server, so the task was not moved.");
       await load();
+    }
+  };
+
+  // Change who a task is assigned to (managers and admins only).
+  const reassign = async (taskId: string, personId: string) => {
+    const person = people.find((p) => p._id === personId);
+    const previous = tasks.find((t) => t._id === taskId)?.assignee;
+    const assigned: User | null = person ? { ...person } : null;
+
+    // Show the new assignee at once; put the old one back if saving fails.
+    setTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, assignee: assigned } : t))
+    );
+
+    const undo = () =>
+      setTasks((prev) =>
+        prev.map((t) => (t._id === taskId ? { ...t, assignee: previous } : t))
+      );
+
+    try {
+      const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignee: personId || null }),
+      });
+
+      if (!response.ok) {
+        undo();
+        alert(await failureMessage(response, "We could not change the assignee. Please try again."));
+      }
+    } catch {
+      undo();
+      alert("We could not reach the server, so the assignee was not changed.");
     }
   };
 
@@ -1410,7 +1448,7 @@ function KanbanBoardPage() {
           </p>
           <h1>Kanban Board</h1>
           <p className="page-description">
-            Continuous workflow — move tasks across columns as work
+            Continuous workflow — drag tasks across columns as work
             progresses.
           </p>
         </div>
@@ -1464,12 +1502,21 @@ function KanbanBoardPage() {
             value={assignee}
             onChange={(e) => setAssignee(e.target.value)}
           >
-            <option value="">Unassigned</option>
-            {users.map((user) => (
-              <option key={user._id} value={user._id}>
-                {user.name}
-              </option>
-            ))}
+            {canAssignOthers ? (
+              <>
+                <option value="">Unassigned</option>
+                {people.map((person) => (
+                  <option key={person._id} value={person._id}>
+                    {personLabel(person, currentUser._id)}
+                  </option>
+                ))}
+              </>
+            ) : (
+              <>
+                <option value={currentUser._id}>Myself</option>
+                <option value="">Unassigned</option>
+              </>
+            )}
           </select>
 
           <div className="form-actions">
@@ -1505,62 +1552,52 @@ function KanbanBoardPage() {
       )}
 
       {!loading && !error && (
-        <div className="kanban-board">
-          {columns.map((column) => {
-            const columnTasks = tasks.filter((t) => t.status === column.key);
+        <KanbanDndBoard
+          columns={columns}
+          tasks={tasks}
+          onMove={(taskId, status) => moveTask(taskId, status as Task["status"])}
+          renderCard={(task, overlay) => (
+            <>
+              <h3>{task.title}</h3>
+              <p>{task.description || "No description"}</p>
 
-            return (
-              <div className="kanban-column" key={column.key}>
-                <div className="kanban-column-header">
-                  <span>{column.label}</span>
-                  <span className="kanban-column-count">
-                    {columnTasks.length}
-                  </span>
-                </div>
-
-                <div className="kanban-column-body">
-                  {columnTasks.length === 0 && (
-                    <p className="kanban-empty">No tasks here</p>
-                  )}
-
-                  {columnTasks.map((task) => (
-                    <div className="kanban-card" key={task._id}>
-                      <h3>{task.title}</h3>
-                      <p>{task.description || "No description"}</p>
-
-                      <div className="task-card-meta">
-                        <span
-                          className={`priority-badge priority-${task.priority}`}
-                        >
-                          {task.priority}
-                        </span>
-                        {task.assignee && (
-                          <span className="role-badge">
-                            {task.assignee.name}
-                          </span>
-                        )}
-                      </div>
-
-                      <TaskTimer task={task} />
-
-                      <select
-                        className="kanban-move-select"
-                        value={task.status}
-                        onChange={(e) =>
-                          moveTask(task._id, e.target.value as Task["status"])
-                        }
-                      >
-                        <option value="todo">Move to Todo</option>
-                        <option value="in_progress">Move to In Progress</option>
-                        <option value="done">Move to Done</option>
-                      </select>
-                    </div>
-                  ))}
-                </div>
+              <div className="task-card-meta">
+                <span className={`priority-badge priority-${task.priority}`}>
+                  {task.priority}
+                </span>
+                {task.assignee && (
+                  <span className="role-badge">{task.assignee.name}</span>
+                )}
               </div>
-            );
-          })}
-        </div>
+
+              {/* One timer per task: the dragged copy doesn't get its own. */}
+              {!overlay && <TaskTimer task={task} />}
+
+              {!overlay && canAssignOthers && (
+                <select
+                  className="kanban-assignee-select"
+                  aria-label={`Assignee of ${task.title}`}
+                  value={task.assignee?._id ?? ""}
+                  onChange={(e) => reassign(task._id, e.target.value)}
+                  // Using the dropdown must not start dragging the card.
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  <option value="">Unassigned</option>
+                  {/* Keep the current assignee listed even if they have left the team. */}
+                  {task.assignee && !people.some((p) => p._id === task.assignee?._id) && (
+                    <option value={task.assignee._id}>{task.assignee.name}</option>
+                  )}
+                  {people.map((person) => (
+                    <option key={person._id} value={person._id}>
+                      {personLabel(person, currentUser._id)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
+          )}
+        />
       )}
     </div>
   );

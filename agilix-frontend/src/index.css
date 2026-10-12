@@ -913,15 +913,6 @@ h1 {
   font-size: 12px;
 }
 
-.kanban-move-select {
-  border: 1px solid #ddd5c0;
-  border-radius: 7px;
-  padding: 7px 8px;
-  font-size: 12px;
-  color: #4a4f46;
-  background: white;
-}
-
 @media (max-width: 900px) {
   .kanban-board {
     grid-template-columns: 1fr;
