@@ -537,6 +537,12 @@ h1 {
   margin-bottom: 24px;
 }
 
+/* Project page cards: stretch to fill the row, so 3 cards (Kanban) use the
+   full width instead of leaving an empty slot on the right. */
+.dashboard-grid-fill {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
 .dashboard-card {
   background: white;
   border: 1px solid #e6dfcd;

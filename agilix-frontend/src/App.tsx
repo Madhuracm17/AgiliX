@@ -5,6 +5,7 @@ import {
   Routes,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useAuth } from "./auth/auth-context";
@@ -904,7 +905,13 @@ function ProjectOverviewBody() {
 
         <button
           className="primary-button"
-          onClick={() => navigate(`/projects/${projectId}/backlog`)}
+          onClick={() =>
+            navigate(
+              (project.methodology || "scrum") === "kanban"
+                ? `/projects/${projectId}/kanban?create=1`
+                : `/projects/${projectId}/backlog`,
+            )
+          }
         >
           + Create Task
         </button>
@@ -956,27 +963,31 @@ function ProjectOverviewBody() {
         </div>
       </div>
 
-      <div className="dashboard-grid">
-        <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <div>
-              <span className="eyebrow">BACKLOG</span>
-              <h2>Tasks</h2>
+      <div className="dashboard-grid dashboard-grid-fill">
+        {/* The backlog belongs to Scrum (tasks waiting for a sprint). Kanban
+            projects keep all their tasks on the board. */}
+        {(project.methodology || "scrum") !== "kanban" && (
+          <div className="dashboard-card">
+            <div className="dashboard-card-header">
+              <div>
+                <span className="eyebrow">BACKLOG</span>
+                <h2>Tasks</h2>
+              </div>
             </div>
+
+            <p>
+              Manage your product backlog, create tasks and prioritize
+              upcoming work.
+            </p>
+
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/projects/${projectId}/backlog`)}
+            >
+              View Backlog
+            </button>
           </div>
-
-          <p>
-            Manage your product backlog, create tasks and prioritize
-            upcoming work.
-          </p>
-
-          <button
-            className="secondary-button"
-            onClick={() => navigate(`/projects/${projectId}/backlog`)}
-          >
-            View Backlog
-          </button>
-        </div>
+        )}
 
         {(project.methodology || "scrum") === "kanban" ? (
           <div className="dashboard-card">
@@ -988,8 +999,8 @@ function ProjectOverviewBody() {
             </div>
 
             <p>
-              Move tasks across Todo, In Progress and Done in a continuous
-              workflow — no sprints.
+              Move tasks across To Do, In Progress, Review and Done in a
+              continuous workflow — no sprints.
             </p>
 
             <button
@@ -1112,6 +1123,34 @@ function ProjectOverviewBody() {
       </div>
     </div>
   );
+}
+
+/**
+ * Pages that belong to Scrum only (backlog, sprints, the sprint task form).
+ * A Kanban project has none of these, so it is sent to its Kanban board
+ * instead, e.g. when someone follows an old link.
+ */
+function ScrumOnly({ children, createTask = false }: { children: ReactElement; createTask?: boolean }) {
+  const { projectId } = useParams();
+  const [methodology, setMethodology] = useState<"scrum" | "kanban" | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    getProject(projectId)
+      .then((project) => !cancelled && setMethodology(project.methodology ?? "scrum"))
+      // If the project can't be loaded, let the page show its own error.
+      .catch(() => !cancelled && setMethodology("scrum"));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  if (methodology === null) return null;
+  if (methodology === "kanban") {
+    return <Navigate to={`/projects/${projectId}/kanban${createTask ? "?create=1" : ""}`} replace />;
+  }
+  return children;
 }
 
 // Product Backlog (Scrum) — see components/scrum/ProductBacklogPage.tsx.
@@ -1310,8 +1349,25 @@ function KanbanBoardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  // "+ Create Task" on the project page links here with ?create=1.
+  const [searchParams, setSearchParams] = useSearchParams();
+  // "Add a task" panel, as on the Scrum backlog: first choose AI suggestions
+  // or a manual form.
+  const [adding, setAdding] = useState(searchParams.get("create") === "1");
+  const [addMode, setAddMode] = useState<"ai" | "manual" | null>(null);
   const [creating, setCreating] = useState(false);
+
+  const closeAddPanel = () => {
+    setAdding(false);
+    setAddMode(null);
+  };
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setAdding(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -1458,7 +1514,7 @@ function KanbanBoardPage() {
       setPriority("medium");
       setAssignee(canAssignOthers ? "" : currentUser._id);
       setStoryPoints(0);
-      setShowForm(false);
+      closeAddPanel();
 
       await load();
     } catch (err) {
@@ -1556,7 +1612,6 @@ function KanbanBoardPage() {
 
   // AI Task Suggestions: ideas for next tasks. A task is only created when
   // someone clicks "Add to To Do" (a developer's goes to a manager for approval).
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
   const [addedSuggestions, setAddedSuggestions] = useState<Record<string, string>>({});
 
@@ -1765,129 +1820,160 @@ function KanbanBoardPage() {
               Reports
             </button>
           )}
-          <button
-            className="secondary-button"
-            aria-pressed={showSuggestions}
-            onClick={() => setShowSuggestions((open) => !open)}
-          >
-            {showSuggestions ? "Hide AI suggestions" : "AI Task Suggestions"}
-          </button>
-          <button className="primary-button" onClick={() => setShowForm(true)}>
-            + Create Task
-          </button>
+          {/* Hidden while the "Add a task" panel is open. */}
+          {!adding && (
+            <button className="primary-button" onClick={() => setAdding(true)}>
+              + Create Task
+            </button>
+          )}
         </div>
       </div>
 
-      {showForm && (
-        <div className="form-card">
-          <h2>Create Task</h2>
+      {adding && (
+        <section className="scrum-panel kanban-add-panel">
+          <div className="scrum-panel-header">
+            <h2>Add a task</h2>
+            <span className="scrum-panel-meta">Choose how</span>
+          </div>
 
-          <label>Title</label>
-          <input
-            type="text"
-            placeholder="Task title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-
-          <label>Description</label>
-          <textarea
-            placeholder="Task description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-
-          <label>Priority</label>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-          {projectId && (
-            <PriorityRecommender
-              projectId={projectId}
-              title={title}
-              description={description}
-              currentPriority={priority as Task["priority"]}
-              applyLabel="Use Recommendation"
-              onApply={(value) => setPriority(value)}
-            />
-          )}
-
-          <label>Story points</label>
-          <select
-            value={storyPoints}
-            onChange={(e) => setStoryPoints(Number(e.target.value) as StoryPointValue)}
-          >
-            {STORY_POINT_SCALE.map((points) => (
-              <option key={points} value={points}>
-                {points === 0 ? "Not estimated" : points}
-              </option>
-            ))}
-          </select>
-          {projectId && (
-            <StoryPointEstimator
-              projectId={projectId}
-              title={title}
-              description={description}
-              priority={priority as Task["priority"]}
-              applyLabel="Use Estimate"
-              onApply={(points) => setStoryPoints(points)}
-            />
-          )}
-
-          <label>Assignee</label>
-          <select
-            value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-          >
-            {canAssignOthers ? (
-              <>
-                <option value="">Unassigned</option>
-                {people.map((person) => (
-                  <option key={person._id} value={person._id}>
-                    {personLabel(person, currentUser._id)}
-                  </option>
-                ))}
-              </>
-            ) : (
-              <>
-                <option value={currentUser._id}>Myself</option>
-                <option value="">Unassigned</option>
-              </>
-            )}
-          </select>
-
-          <div className="form-actions">
+          <div className="scrum-add-options">
             <button
-              className="secondary-button"
-              onClick={() => setShowForm(false)}
+              type="button"
+              className={`scrum-add-option ${addMode === "ai" ? "selected" : ""}`}
+              aria-pressed={addMode === "ai"}
+              onClick={() => setAddMode(addMode === "ai" ? null : "ai")}
             >
-              Cancel
+              <strong>AI Suggestions</strong>
+              <span>Let AI suggest tasks based on this board</span>
             </button>
-
             <button
-              className="primary-button"
-              onClick={createTask}
-              disabled={creating}
+              type="button"
+              className={`scrum-add-option ${addMode === "manual" ? "selected" : ""}`}
+              aria-pressed={addMode === "manual"}
+              onClick={() => setAddMode(addMode === "manual" ? null : "manual")}
             >
-              {creating ? "Creating..." : "Create Task"}
+              <strong>+ Create New Task</strong>
+              <span>Create a task manually</span>
             </button>
           </div>
-        </div>
-      )}
 
-      {showSuggestions && projectId && (
-        <div className="kanban-suggestions">
-          <TaskSuggestions
-            projectId={projectId}
-            subtitle="Ideas for next tasks, based on the tasks on this board."
-            renderActions={renderSuggestionActions}
-          />
-        </div>
+          {addMode === "ai" && projectId && (
+            <div className="scrum-add-ai">
+              <TaskSuggestions
+                projectId={projectId}
+                subtitle="Ideas for next tasks, based on the tasks on this board."
+                renderActions={renderSuggestionActions}
+              />
+            </div>
+          )}
+
+          {addMode === "manual" && (
+            <div className="form-card kanban-add-form">
+
+              <label>Title</label>
+              <input
+                type="text"
+                placeholder="Task title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+
+              <label>Description</label>
+              <textarea
+                placeholder="Task description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+
+              <label>Priority</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+              {projectId && (
+                <PriorityRecommender
+                  projectId={projectId}
+                  title={title}
+                  description={description}
+                  currentPriority={priority as Task["priority"]}
+                  applyLabel="Use Recommendation"
+                  onApply={(value) => setPriority(value)}
+                />
+              )}
+
+              <label>Story points</label>
+              <select
+                value={storyPoints}
+                onChange={(e) => setStoryPoints(Number(e.target.value) as StoryPointValue)}
+              >
+                {STORY_POINT_SCALE.map((points) => (
+                  <option key={points} value={points}>
+                    {points === 0 ? "Not estimated" : points}
+                  </option>
+                ))}
+              </select>
+              {projectId && (
+                <StoryPointEstimator
+                  projectId={projectId}
+                  title={title}
+                  description={description}
+                  priority={priority as Task["priority"]}
+                  applyLabel="Use Estimate"
+                  onApply={(points) => setStoryPoints(points)}
+                />
+              )}
+
+              <label>Assignee</label>
+              <select
+                value={assignee}
+                onChange={(e) => setAssignee(e.target.value)}
+              >
+                {canAssignOthers ? (
+                  <>
+                    <option value="">Unassigned</option>
+                    {people.map((person) => (
+                      <option key={person._id} value={person._id}>
+                        {personLabel(person, currentUser._id)}
+                      </option>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <option value={currentUser._id}>Myself</option>
+                    <option value="">Unassigned</option>
+                  </>
+                )}
+              </select>
+
+              <div className="form-actions">
+                <button className="secondary-button" onClick={closeAddPanel}>
+                  Cancel
+                </button>
+
+                <button
+                  className="primary-button"
+                  onClick={createTask}
+                  disabled={creating}
+                >
+                  {creating ? "Creating..." : "Create Task"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* The manual form has its own Cancel button. */}
+          {addMode !== "manual" && (
+            <div className="kanban-add-close">
+              <button type="button" className="secondary-button" onClick={closeAddPanel}>
+                Close
+              </button>
+            </div>
+          )}
+        </section>
       )}
 
       {loading && (
@@ -2229,17 +2315,17 @@ function App() {
 
           <Route
             path="/projects/:projectId/backlog"
-            element={<NotForAdmin><BacklogPage /></NotForAdmin>}
+            element={<NotForAdmin><ScrumOnly><BacklogPage /></ScrumOnly></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/sprints"
-            element={<NotForAdmin><SprintPage /></NotForAdmin>}
+            element={<NotForAdmin><ScrumOnly><SprintPage /></ScrumOnly></NotForAdmin>}
           />
 
           <Route
             path="/projects/:projectId/tasks/new"
-            element={<NotForAdmin><NewTaskPage /></NotForAdmin>}
+            element={<NotForAdmin><ScrumOnly createTask><NewTaskPage /></ScrumOnly></NotForAdmin>}
           />
 
           <Route
