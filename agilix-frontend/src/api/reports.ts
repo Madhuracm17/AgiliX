@@ -126,6 +126,7 @@ export interface CfdDay {
   date: string;
   todo: number;
   inProgress: number;
+  review: number;
   done: number;
 }
 

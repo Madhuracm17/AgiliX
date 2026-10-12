@@ -13,6 +13,8 @@ interface TaskSuggestionsProps {
    * these buttons do, when the user clicks them.
    */
   renderActions?: (suggestion: TaskSuggestion) => ReactNode;
+  /** The line under the heading. Defaults to the Backlog wording. */
+  subtitle?: string;
 }
 
 /**
@@ -23,6 +25,7 @@ interface TaskSuggestionsProps {
 export default function TaskSuggestions({
   projectId,
   renderActions,
+  subtitle = "Ideas for next tasks, based only on the tasks in this backlog.",
 }: TaskSuggestionsProps) {
   const [suggestions, setSuggestions] = useState<TaskSuggestion[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -50,7 +53,7 @@ export default function TaskSuggestions({
       <div className="task-suggestions-header">
         <div>
           <h2>AI Task Suggestions</h2>
-          <p>Ideas for next tasks, based only on the tasks in this backlog.</p>
+          <p>{subtitle}</p>
         </div>
 
         <button

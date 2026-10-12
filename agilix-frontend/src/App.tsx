@@ -22,11 +22,12 @@ import TeamRequests from "./components/team/TeamRequests";
 import AdminTeamPage from "./components/team/AdminTeamPage";
 import KanbanDndBoard from "./components/kanban/KanbanDndBoard";
 import { personLabel, useProjectPeople } from "./components/team/useProjectPeople";
-import { canEditTaskPlan, readError } from "./components/scrum/taskDisplay";
+import { canEditTaskPlan, canMarkDone, readError } from "./components/scrum/taskDisplay";
 import StoryPointEstimator from "./components/ai/StoryPointEstimator";
 import PriorityRecommender from "./components/ai/PriorityRecommender";
 import KanbanInsights from "./components/ai/KanbanInsights";
-import { STORY_POINT_SCALE, type StoryPointValue } from "./api/ai";
+import TaskSuggestions from "./components/ai/TaskSuggestions";
+import { STORY_POINT_SCALE, type StoryPointValue, type TaskSuggestion } from "./api/ai";
 import { getSprints, type Sprint as ApiSprint } from "./api/sprints";
 import { daysLeft, formatLongDate, sprintLabel } from "./components/scrum/taskDisplay";
 import { PROJECT_STATUS_LABELS, getProject, updateProject, type ProjectStatus } from "./api/projects";
@@ -62,6 +63,8 @@ type Task = {
   assignee?: User | null;
   storyPoints?: number;
   type?: string | null;
+  /** What a tester asked to fix when sending the task back from Review. */
+  reviewNote?: { text: string; byName?: string } | null;
 };
 
 type Sprint = {
@@ -1287,6 +1290,13 @@ function AiInsightsPage() {
   );
 }
 
+const STATUS_NAMES: Record<Task["status"], string> = {
+  todo: "To Do",
+  in_progress: "In Progress",
+  review: "Review",
+  done: "Done",
+};
+
 function KanbanBoardPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -1334,6 +1344,34 @@ function KanbanBoardPage() {
   }, [projectId]);
 
   const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
+
+  // Board rules (the same as the Scrum board; the backend enforces them too):
+  // the assignee moves their own task To Do → In Progress → Review, and a
+  // tester, manager or admin signs it off to Done or sends it back with a comment.
+  const signOff = canMarkDone(currentUser.role);
+  const [bouncingId, setBouncingId] = useState<string | null>(null);
+  const [bounceText, setBounceText] = useState("");
+  const [bounceBusy, setBounceBusy] = useState(false);
+
+  /** Why this move is not allowed, or null if it is. */
+  const moveProblem = (task: Task, status: Task["status"]): string | null => {
+    const flow: Task["status"][] = ["todo", "in_progress", "review", "done"];
+    const next = flow[flow.indexOf(task.status) + 1];
+    if (!next) return "This task is already Done.";
+    if (status !== next) {
+      return `Tasks move one step at a time: ${STATUS_NAMES[task.status]} → ${STATUS_NAMES[next]}.`;
+    }
+    if (status === "done") {
+      return signOff
+        ? null
+        : "A task can only be marked Done by a tester, manager or admin. Please ask a tester to review it.";
+    }
+    if (!task.assignee) return "This task has no assignee yet. Assign it to someone before moving it.";
+    if (task.assignee._id !== currentUser._id) {
+      return "Only the person this task is assigned to can move it to In Progress or Review.";
+    }
+    return null;
+  };
 
   // Story points: set by the person doing the task, or adjusted by a manager.
   // (The backend enforces the same rule.)
@@ -1431,6 +1469,26 @@ function KanbanBoardPage() {
   };
 
   const moveTask = async (taskId: string, status: Task["status"]) => {
+    const task = tasks.find((t) => t._id === taskId);
+    if (!task || task.status === status) return;
+
+    // Back from Review: a tester (or manager/admin) says what to fix first.
+    if (task.status === "review" && status === "in_progress") {
+      if (!signOff) {
+        alert("Only a tester, manager or admin can send a task back from Review.");
+        return;
+      }
+      setBouncingId(task._id);
+      setBounceText("");
+      return;
+    }
+
+    const problem = moveProblem(task, status);
+    if (problem) {
+      alert(problem);
+      return;
+    }
+
     // WIP limit: don't start another task while In Progress is full.
     // (The backend checks this too; this just saves a round trip.)
     if (status === "in_progress" && wipLimit > 0 && inProgressCount >= wipLimit) {
@@ -1496,6 +1554,89 @@ function KanbanBoardPage() {
     }
   };
 
+  // AI Task Suggestions: ideas for next tasks. A task is only created when
+  // someone clicks "Add to To Do" (a developer's goes to a manager for approval).
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
+  const [addedSuggestions, setAddedSuggestions] = useState<Record<string, string>>({});
+
+  const addSuggestion = async (suggestion: TaskSuggestion) => {
+    if (!projectId || addingSuggestion) return;
+    const key = suggestion.title;
+    try {
+      setAddingSuggestion(key);
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: suggestion.title,
+          description: suggestion.description,
+          priority: suggestion.priority,
+          project: projectId,
+        }),
+      });
+      const created = await response.json().catch(() => null);
+      if (!response.ok) {
+        alert(created?.message || "Failed to add the suggested task.");
+        return;
+      }
+      setAddedSuggestions((prev) => ({
+        ...prev,
+        [key]: created?.pendingApproval ? "Sent to a manager for approval" : "Added to To Do",
+      }));
+      if (!created?.pendingApproval) await load();
+    } catch {
+      alert("We could not reach the server, so the task was not added.");
+    } finally {
+      setAddingSuggestion(null);
+    }
+  };
+
+  const renderSuggestionActions = (suggestion: TaskSuggestion) => {
+    const added = addedSuggestions[suggestion.title];
+    if (added) return <p className="scrum-suggestion-added">✓ {added}</p>;
+    return (
+      <div className="scrum-suggestion-actions">
+        <button
+          type="button"
+          className="primary-button"
+          disabled={addingSuggestion !== null}
+          onClick={() => addSuggestion(suggestion)}
+        >
+          {addingSuggestion === suggestion.title ? "Adding..." : "+ Add to To Do"}
+        </button>
+      </div>
+    );
+  };
+
+  // A tester found a problem in Review: back to In Progress, with a note for the assignee.
+  const sendBack = async (task: Task) => {
+    const comment = bounceText.trim();
+    if (!comment) {
+      alert("Please write what needs to be fixed, so the developer knows.");
+      return;
+    }
+    try {
+      setBounceBusy(true);
+      const response = await fetch(`${API_URL}/tasks/${task._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "in_progress", reviewComment: comment }),
+      });
+      if (!response.ok) {
+        alert(await failureMessage(response, "Could not send the task back."));
+        return;
+      }
+      setBouncingId(null);
+      setBounceText("");
+      await load();
+    } catch {
+      alert("We could not reach the server, so the task was not sent back.");
+    } finally {
+      setBounceBusy(false);
+    }
+  };
+
   // Change who a task is assigned to (managers and admins only).
   const reassign = async (taskId: string, personId: string) => {
     const person = people.find((p) => p._id === personId);
@@ -1532,6 +1673,7 @@ function KanbanBoardPage() {
   const columns: { key: Task["status"]; label: string }[] = [
     { key: "todo", label: "Todo" },
     { key: "in_progress", label: "In Progress" },
+    { key: "review", label: "Review" },
     { key: "done", label: "Done" },
   ];
 
@@ -1549,6 +1691,10 @@ function KanbanBoardPage() {
           <p className="page-description">
             Continuous workflow — drag tasks across columns as work
             progresses.
+          </p>
+          <p className="kanban-rules-hint">
+            Move your own tasks To Do → In Progress → Review. A tester, manager or admin signs
+            them off to Done, or sends them back with a note.
           </p>
 
           {/* WIP limit: everyone sees it; managers and admins can change it. */}
@@ -1619,6 +1765,13 @@ function KanbanBoardPage() {
               Reports
             </button>
           )}
+          <button
+            className="secondary-button"
+            aria-pressed={showSuggestions}
+            onClick={() => setShowSuggestions((open) => !open)}
+          >
+            {showSuggestions ? "Hide AI suggestions" : "AI Task Suggestions"}
+          </button>
           <button className="primary-button" onClick={() => setShowForm(true)}>
             + Create Task
           </button>
@@ -1727,6 +1880,16 @@ function KanbanBoardPage() {
         </div>
       )}
 
+      {showSuggestions && projectId && (
+        <div className="kanban-suggestions">
+          <TaskSuggestions
+            projectId={projectId}
+            subtitle="Ideas for next tasks, based on the tasks on this board."
+            renderActions={renderSuggestionActions}
+          />
+        </div>
+      )}
+
       {loading && (
         <div className="empty-state">
           <h2>Loading board...</h2>
@@ -1765,6 +1928,14 @@ function KanbanBoardPage() {
                 )}
               </div>
 
+              {/* What the tester asked to fix, while the task is back in progress. */}
+              {task.reviewNote && task.status === "in_progress" && (
+                <p className="scrum-review-note">
+                  <strong>Sent back by {task.reviewNote.byName || "a tester"}</strong>
+                  {task.reviewNote.text}
+                </p>
+              )}
+
               {/* One timer per task: the dragged copy doesn't get its own. */}
               {!overlay && <TaskTimer task={task} />}
 
@@ -1775,6 +1946,58 @@ function KanbanBoardPage() {
                   onMouseDown={(e) => e.stopPropagation()}
                   onTouchStart={(e) => e.stopPropagation()}
                 >
+                  {task.status === "review" && !signOff && (
+                    <p className="kanban-waiting">Waiting for a tester to sign off</p>
+                  )}
+
+                  {/* A tester can send work back from Review, with a comment. */}
+                  {task.status === "review" && signOff && (
+                    bouncingId === task._id ? (
+                      <div className="scrum-bounce">
+                        <textarea
+                          aria-label={`What needs to be fixed in ${task.title}`}
+                          placeholder="What needs to be fixed?"
+                          value={bounceText}
+                          maxLength={1000}
+                          autoFocus
+                          onChange={(e) => setBounceText(e.target.value)}
+                        />
+                        <div className="scrum-bounce-actions">
+                          <button
+                            type="button"
+                            className="scrum-bounce-button"
+                            disabled={bounceBusy}
+                            onClick={() => sendBack(task)}
+                          >
+                            {bounceBusy ? "Sending…" : "Send back"}
+                          </button>
+                          <button
+                            type="button"
+                            className="sprint-card-backlog-button"
+                            disabled={bounceBusy}
+                            onClick={() => {
+                              setBouncingId(null);
+                              setBounceText("");
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="scrum-bounce-button"
+                        onClick={() => {
+                          setBouncingId(task._id);
+                          setBounceText("");
+                        }}
+                      >
+                        ↩ Found a bug? Send back
+                      </button>
+                    )
+                  )}
+
                   {canAssignOthers && (
                     <select
                       className="kanban-assignee-select"
@@ -1864,10 +2087,10 @@ function KanbanBoardPage() {
         />
       )}
 
-      {/* AI Kanban Insights: board health, bottlenecks and next steps. This board has no Review column. */}
+      {/* AI Kanban Insights: board health, bottlenecks and next steps (including Review). */}
       {!loading && !error && projectId && (
         <div className="kanban-insights-slot">
-          <KanbanInsights projectId={projectId} reviewEnabled={false} />
+          <KanbanInsights projectId={projectId} reviewEnabled={true} />
         </div>
       )}
     </div>

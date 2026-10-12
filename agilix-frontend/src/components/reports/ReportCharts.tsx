@@ -320,16 +320,19 @@ export function VelocityChart({
  */
 const CFD_BANDS = [
   { key: "done", name: "Done", color: "#3f8a4a" },
+  { key: "review", name: "Review", color: "#8c62b8" },
   { key: "inProgress", name: "In Progress", color: "#c9961a" },
   { key: "todo", name: "To Do", color: "#5b7fc4" },
 ] as const;
+
+type BandKey = (typeof CFD_BANDS)[number]["key"];
 
 /**
  * Cumulative flow diagram: tasks in each column at the end of each day,
  * stacked. A widening middle band means work is piling up In Progress.
  */
 export function CumulativeFlowChart({ days }: { days: CfdDay[] }) {
-  const totals = days.map((d) => d.todo + d.inProgress + d.done);
+  const totals = days.map((d) => d.todo + d.inProgress + d.review + d.done);
   const max = niceMax(Math.max(0, ...totals));
   const plotW = WIDTH - PAD.left - PAD.right - 70; // room for the labels on the right
   const plotH = HEIGHT - PAD.top - PAD.bottom;
@@ -341,9 +344,13 @@ export function CumulativeFlowChart({ days }: { days: CfdDay[] }) {
 
   // Cumulative tops of each band, bottom (Done) to top (To Do).
   const tops = days.map((d) => {
-    const done = d.done;
-    const inProgress = done + d.inProgress;
-    return { done, inProgress, todo: inProgress + d.todo };
+    const top = {} as Record<BandKey, number>;
+    let sum = 0;
+    for (const band of CFD_BANDS) {
+      sum += d[band.key];
+      top[band.key] = sum;
+    }
+    return top;
   });
   const bottomOf = (bandIndex: number, i: number) =>
     bandIndex === 0 ? 0 : tops[i][CFD_BANDS[bandIndex - 1].key];
@@ -419,7 +426,7 @@ export function CumulativeFlowChart({ days }: { days: CfdDay[] }) {
             onMouseEnter={() => setHover(i)}
           >
             <title>
-              {`${shortDate(day.date)}: To Do ${day.todo}, In Progress ${day.inProgress}, Done ${day.done}`}
+              {`${shortDate(day.date)}: To Do ${day.todo}, In Progress ${day.inProgress}, Review ${day.review}, Done ${day.done}`}
             </title>
           </rect>
         ))}
@@ -429,8 +436,8 @@ export function CumulativeFlowChart({ days }: { days: CfdDay[] }) {
 
       {hovered && (
         <p className="rpt-hover-readout" aria-live="polite">
-          <strong>{shortDate(hovered.date)}</strong> · To Do {hovered.todo} · In Progress {hovered.inProgress} · Done{" "}
-          {hovered.done}
+          <strong>{shortDate(hovered.date)}</strong> · To Do {hovered.todo} · In Progress {hovered.inProgress} · Review{" "}
+          {hovered.review} · Done {hovered.done}
         </p>
       )}
 

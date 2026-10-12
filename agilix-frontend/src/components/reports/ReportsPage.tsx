@@ -684,8 +684,8 @@ function KanbanReports({ projectId }: { projectId: string }) {
           <div>
             <h2>Flow over time</h2>
             <p className="rpt-sub">
-              Tasks in each column at the end of each day. A widening In Progress band means work is
-              piling up; a steadily rising Done band means work is flowing.
+              Tasks in each column at the end of each day. A widening In Progress or Review band means
+              work is piling up there; a steadily rising Done band means work is flowing.
             </p>
           </div>
           <select
@@ -706,7 +706,7 @@ function KanbanReports({ projectId }: { projectId: string }) {
         {error && !loading && <p className="rpt-empty">{error}</p>}
         {report && !loading && !error && (
           <>
-            {report.cumulativeFlow.every((d) => d.todo + d.inProgress + d.done === 0) ? (
+            {report.cumulativeFlow.every((d) => d.todo + d.inProgress + d.review + d.done === 0) ? (
               <p className="rpt-empty">No tasks yet. Create tasks on the Kanban board to see the flow.</p>
             ) : (
               <CumulativeFlowChart days={report.cumulativeFlow} />
