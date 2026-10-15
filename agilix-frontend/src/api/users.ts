@@ -5,6 +5,8 @@ export interface User {
   name: string;
   email: string;
   role: "admin" | "manager" | "developer" | "tester";
+  /** GitHub login used to match commits and pull requests. Empty = not linked. */
+  githubUsername?: string;
 }
 
 export interface CreateUserData {
@@ -31,5 +33,16 @@ export function createUser(data: CreateUserData) {
   return api<User>("/users", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+export function getUser(id: string) {
+  return api<User>(`/users/${id}`);
+}
+
+/** Links the logged-in person's GitHub username ("" unlinks it). */
+export function setMyGithubUsername(githubUsername: string) {
+  return api<User>("/users/me/github", {
+    method: "PATCH",
+    body: JSON.stringify({ githubUsername }),
   });
 }

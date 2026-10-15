@@ -129,6 +129,7 @@ export class ProjectsService {
     if (dto.description !== undefined) changes.description = dto.description.trim();
     if (dto.status !== undefined) changes.status = dto.status;
     if (dto.wipLimit !== undefined) changes.wipLimit = dto.wipLimit;
+    if (dto.githubRepo !== undefined) changes.githubRepo = dto.githubRepo.trim();
     const project = await this.projectModel.findByIdAndUpdate(id, changes, { new: true });
     if (!project) throw new NotFoundException('Project not found');
     return project;

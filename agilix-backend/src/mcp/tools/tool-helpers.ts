@@ -81,6 +81,7 @@ export function slimProject(input: unknown) {
     methodology: p.methodology,
     status: p.status ?? 'active',
     wipLimit: p.wipLimit ?? 0,
+    githubRepo: p.githubRepo || null,
     owner: person(p.owner),
     members: members.map(person).filter(Boolean),
   };

@@ -112,6 +112,8 @@ try {
     'agilix_recommend_priority',
     'agilix_suggest_tasks',
     'agilix_get_kanban_insights',
+    // Calls GitHub's MCP server, so only checked for registration here.
+    'agilix_get_github_activity',
   ];
   const missing = EXPECTED_TOOLS.filter((name) => !toolNames.includes(name));
   check(missing.length === 0, `All ${EXPECTED_TOOLS.length} business tools are registered${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`);

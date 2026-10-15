@@ -1,4 +1,7 @@
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+
+/** "owner/name" as on github.com, or an empty string to unlink the repo. */
+export const GITHUB_REPO_PATTERN = /^$|^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
 
 export const PROJECT_STATUSES = ['active', 'on_hold', 'completed'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -26,4 +29,12 @@ export class UpdateProjectDto {
   @Min(0, { message: 'The WIP limit cannot be negative' })
   @Max(100, { message: 'The WIP limit can be at most 100' })
   wipLimit?: number;
+
+  /** GitHub repository as "owner/name". Send "" to unlink it. */
+  @IsOptional()
+  @IsString()
+  @Matches(GITHUB_REPO_PATTERN, {
+    message: 'The GitHub repository must look like owner/name, e.g. Madhuracm17/AgiliX',
+  })
+  githubRepo?: string;
 }

@@ -15,7 +15,17 @@ interface SettingsProject {
   name: string;
   description?: string;
   status?: ProjectStatus;
+  githubRepo?: string;
   owner?: { _id: string } | null;
+}
+
+/** Accepts "owner/name" or a full github.com link, and returns "owner/name" (or "" if empty). */
+function normaliseRepo(value: string): string {
+  return value
+    .trim()
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, "")
+    .replace(/\.git$/i, "")
+    .replace(/\/+$/, "");
 }
 
 interface ProjectSettingsProps<T extends SettingsProject> {
@@ -45,6 +55,7 @@ export default function ProjectSettings<T extends SettingsProject>({
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status ?? "active");
+  const [githubRepo, setGithubRepo] = useState(project.githubRepo ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,6 +65,7 @@ export default function ProjectSettings<T extends SettingsProject>({
     setName(project.name);
     setDescription(project.description ?? "");
     setStatus(project.status ?? "active");
+    setGithubRepo(project.githubRepo ?? "");
     setError("");
     setEditing(true);
   };
@@ -63,15 +75,21 @@ export default function ProjectSettings<T extends SettingsProject>({
       setError("Please enter a project name.");
       return;
     }
+    const repo = normaliseRepo(githubRepo);
+    if (repo && !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) {
+      setError("The GitHub repository must look like owner/name, e.g. Madhuracm17/AgiliX.");
+      return;
+    }
     try {
       setSaving(true);
       setError("");
-      const saved = await updateProject(project._id, { name, description, status });
+      const saved = await updateProject(project._id, { name, description, status, githubRepo: repo });
       onSaved({
         ...project,
         name: saved.name,
         description: saved.description,
         status: saved.status,
+        githubRepo: saved.githubRepo,
       });
       setEditing(false);
     } catch (err) {
@@ -131,6 +149,18 @@ export default function ProjectSettings<T extends SettingsProject>({
                 </option>
               ))}
             </select>
+          </label>
+          <label>
+            <span>GitHub repository</span>
+            <input
+              value={githubRepo}
+              onChange={(e) => setGithubRepo(e.target.value)}
+              placeholder="owner/name, e.g. Madhuracm17/AgiliX"
+              maxLength={200}
+            />
+            <small className="project-settings-hint">
+              Used for sprint health and burnout. Leave empty if the project has no repository.
+            </small>
           </label>
           {error && (
             <p className="project-settings-error" role="alert">
