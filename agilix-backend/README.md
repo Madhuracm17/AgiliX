@@ -63,11 +63,17 @@ transport:
   — the same config, MongoDB connection setup and services as the API, but **no
   HTTP server** and no extra port.
 - **stdout carries only MCP protocol messages.** All logs go to **stderr**.
-- It uses the existing `.env` (no extra environment variables) and loads it from
-  `agilix-backend/` even when an MCP client starts it from another folder.
+- It uses the existing `.env` and loads it from `agilix-backend/` even when an
+  MCP client starts it from another folder.
+- **It acts as one real AgiliX account**, set by `MCP_USER_EMAIL` in `.env`.
+  Every business tool runs the same checks as the HTTP routes (`AccessService`
+  for project/sprint/task membership, `requireRole` for manager-only reports),
+  so an MCP client sees exactly what that person sees in the web app. The
+  account is re-read on every call, so a role change applies immediately.
+  Without `MCP_USER_EMAIL`, only `agilix_server_info` works; the other tools
+  return `Error 401`.
 - It is **read-only**: tools that change data are refused while
-  `MCP_WRITE_TOOLS_ENABLED` is `false` (`src/mcp/mcp-server.constants.ts`),
-  because AgiliX has no authentication yet.
+  `MCP_WRITE_TOOLS_ENABLED` is `false` (`src/mcp/mcp-server.constants.ts`).
 
 ### Run and test
 
@@ -81,11 +87,37 @@ npm run mcp          # starts the server on stdio (normally started BY an MCP cl
 `npm run mcp` waits silently for MCP messages on stdin; stop it with `Ctrl+C`.
 Rebuild (`npm run build`) after every change — the MCP server runs from `dist/`.
 
-### Built-in tool
+### Tools
 
-| Tool | Type | Purpose |
+All tools are read-only. "Team reports" tools need a manager or admin account,
+exactly like the Reports pages.
+
+| Tool | Who | Purpose |
 |---|---|---|
-| `agilix_server_info` | read-only | Health check: server name/version, NestJS context status, MongoDB connection state |
+| `agilix_server_info` | anyone (no account needed) | Health check: server version, NestJS context, MongoDB state, which account the tools act as |
+| `agilix_whoami` | any account | The account the tools act as (name, email, role) |
+| `agilix_list_projects` | any account | Projects this account can see |
+| `agilix_get_project` | project member | One project with owner, members, status and WIP limit |
+| `agilix_list_tasks` | project member | Tasks, filtered by status, assignee or backlog only |
+| `agilix_get_task_time` | project member | Total time and time entries for one task |
+| `agilix_list_sprints` | project member | Sprints with goal, dates, status and points |
+| `agilix_get_sprint` | project member | One sprint with stats, days remaining and its tasks |
+| `agilix_get_project_summary` | manager / admin | Task counts, story points, hours, active-sprint pace |
+| `agilix_get_team_workload` | manager / admin | Tasks, completion and hours per team member |
+| `agilix_get_velocity` | manager / admin | Committed vs completed points per sprint, average velocity |
+| `agilix_get_burndown` | manager / admin | Burndown / burnup series for a sprint |
+| `agilix_get_sprint_report` | manager / admin | Sprint report: points, scope changes, finished and unfinished tasks |
+| `agilix_get_kanban_report` | manager / admin | Cumulative flow, throughput, cycle and lead time (14/30/90 days) |
+| `agilix_get_my_report` | manager / developer / tester | The account's own tasks, progress and time |
+| `agilix_predict_sprint_risk` | project member | AI: green / yellow / red risk, reasoning, completion forecast for a planned or active sprint |
+| `agilix_estimate_story_points` | project member | AI: story-point estimate (0–13) with reasoning for a task idea or existing task |
+| `agilix_recommend_priority` | project member | AI: low / medium / high with reasoning (ignores the current priority) |
+| `agilix_suggest_tasks` | project member | AI: missing tasks for the backlog, with priority and reasoning |
+| `agilix_get_kanban_insights` | project member | AI: Kanban board health, bottlenecks and recommendations |
+
+The AI tools call OpenRouter (`OPENROUTER_API_KEY`), can take up to ~30 s, and
+only suggest: nothing is created or saved. `Error 503` means every model failed.
+`npm run mcp:test` checks that they are registered but does not call them.
 
 ### Connect from Claude Desktop (Windows example)
 
@@ -105,20 +137,21 @@ double backslashes), then restart Claude Desktop:
 
 ### Adding a tool (for the MCP tools owner)
 
-1. Create `src/mcp/tools/<name>.tool.ts`:
+1. Add the tool to the matching file in `src/mcp/tools/` (`project.tools.ts`,
+   `task.tools.ts`, `sprint.tools.ts`, `report.tools.ts`), for example:
 
 ```ts
-import { z } from 'zod';
-import { ProjectsService } from '../../projects/projects.service';
-import { defineMcpTool } from '../mcp-tool.types';
-
-export const getProjectTool = defineMcpTool({
-  name: 'get_project',
-  title: 'Get project',
-  description: 'Returns one AgiliX project by id.',
-  inputSchema: { projectId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid project id') },
+export const listSprintsTool = defineMcpTool({
+  name: 'agilix_list_sprints',
+  title: 'List sprints',
+  description: 'Lists the sprints of a Scrum project ...',
   readOnly: true,
-  handler: ({ projectId }, ctx) => ctx.get(ProjectsService).findOne(projectId),
+  inputSchema: { projectId: objectId('project') },
+  handler: async ({ projectId }, ctx) => {
+    const { user, access } = await actingUser(ctx);   // the MCP_USER_EMAIL account
+    await access.assertProject(user, projectId);      // same check as the HTTP route
+    return (await ctx.get(SprintsService).findAllForProject(projectId)).map(slimSprint);
+  },
 });
 ```
 
@@ -127,6 +160,9 @@ export const getProjectTool = defineMcpTool({
 
 Rules:
 
+- Always resolve the account with `actingUser(ctx)` and run the **same**
+  `AccessService` / `requireRole` checks as the matching HTTP controller before
+  calling a service. Never skip them: the MCP process has full database access.
 - Call existing services through `ctx.get(SomeService)` — never duplicate business logic.
 - Return plain data; throw normal Nest exceptions (`NotFoundException`, …). The
   factory converts results and errors to MCP responses.

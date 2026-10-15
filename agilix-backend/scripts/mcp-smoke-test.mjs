@@ -89,6 +89,72 @@ try {
 
   console.log('\nagilix_server_info result:');
   console.log(text);
+
+  // ---- Business tools ----
+  const EXPECTED_TOOLS = [
+    'agilix_whoami',
+    'agilix_list_projects',
+    'agilix_get_project',
+    'agilix_list_tasks',
+    'agilix_get_task_time',
+    'agilix_list_sprints',
+    'agilix_get_sprint',
+    'agilix_get_project_summary',
+    'agilix_get_team_workload',
+    'agilix_get_velocity',
+    'agilix_get_burndown',
+    'agilix_get_sprint_report',
+    'agilix_get_kanban_report',
+    'agilix_get_my_report',
+    // AI tools: only checked for registration here, because each call uses the LLM (slow, costs credits).
+    'agilix_predict_sprint_risk',
+    'agilix_estimate_story_points',
+    'agilix_recommend_priority',
+    'agilix_suggest_tasks',
+    'agilix_get_kanban_insights',
+  ];
+  const missing = EXPECTED_TOOLS.filter((name) => !toolNames.includes(name));
+  check(missing.length === 0, `All ${EXPECTED_TOOLS.length} business tools are registered${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`);
+  check(
+    tools.every((tool) => tool.annotations?.readOnlyHint === true),
+    'Every registered tool is read-only',
+  );
+
+  const call = (name, args = {}) =>
+    client.callTool({ name, arguments: args }, undefined, { timeout: REQUEST_TIMEOUT_MS });
+  const textOf = (r) => r.content?.find((item) => item.type === 'text')?.text ?? '';
+
+  if (!info?.actingAs) {
+    // Not linked to an account: business tools must refuse with a real error.
+    const denied = await call('agilix_whoami');
+    check(
+      denied.isError === true && textOf(denied).startsWith('Error 401'),
+      'Without MCP_USER_EMAIL, business tools return Error 401 (isError: true)',
+    );
+    console.log('  (Set MCP_USER_EMAIL in .env to also test the tools with real data.)');
+  } else {
+    const me = await call('agilix_whoami');
+    check(!me.isError, `agilix_whoami → ${textOf(me).replace(/\s+/g, ' ').slice(0, 120)}`);
+
+    const projectsResult = await call('agilix_list_projects');
+    check(!projectsResult.isError, 'agilix_list_projects returned without error');
+    let projects = [];
+    try { projects = JSON.parse(textOf(projectsResult)); } catch { /* checked below */ }
+    check(Array.isArray(projects), `agilix_list_projects returned ${projects.length} project(s)`);
+
+    if (projects.length > 0) {
+      const projectId = projects[0].id;
+      const tasks = await call('agilix_list_tasks', { projectId });
+      check(!tasks.isError, `agilix_list_tasks on "${projects[0].name}" returned without error`);
+    }
+
+    // A badly formed id must come back as a 400 tool error, not a crash or a "success".
+    const bad = await call('agilix_get_project', { projectId: 'not-an-id' });
+    check(
+      bad.isError === true && textOf(bad).startsWith('Error 400'),
+      `Invalid id is rejected: ${textOf(bad)}`,
+    );
+  }
 } catch (error) {
   passed = false;
   console.error(`✖ Smoke test failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -105,5 +171,5 @@ try {
   }
 }
 
-console.log(passed ? '\nPASSED — AgiliX MCP server foundation works.' : '\nFAILED — see the messages above.');
+console.log(passed ? '\nPASSED — AgiliX MCP server works.' : '\nFAILED — see the messages above.');
 process.exit(passed ? 0 : 1);

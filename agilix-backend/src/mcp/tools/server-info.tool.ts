@@ -1,5 +1,6 @@
 import { getConnectionToken } from '@nestjs/mongoose';
 import type { Connection } from 'mongoose';
+import { configuredMcpEmail } from '../mcp-identity';
 import { AGILIX_MCP_SERVER_INFO } from '../mcp-server.constants';
 import { defineMcpTool } from '../mcp-tool.types';
 
@@ -21,6 +22,7 @@ export const serverInfoTool = defineMcpTool({
   description:
     'Read-only health check for the AgiliX MCP server. Returns the server name and version, ' +
     'whether the NestJS application context is ready, and the MongoDB connection state. ' +
+    'Also reports which AgiliX account (MCP_USER_EMAIL) the business tools act as. ' +
     'Does not read or change any project data.',
   readOnly: true,
   handler: (_args, ctx) => {
@@ -37,6 +39,8 @@ export const serverInfoTool = defineMcpTool({
         state: databaseState,
         name: connection.name,
       },
+      // Business tools act as this account (MCP_USER_EMAIL). null = not set up yet.
+      actingAs: configuredMcpEmail(),
       node: process.version,
       uptimeSeconds: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
