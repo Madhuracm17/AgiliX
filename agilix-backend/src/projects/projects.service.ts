@@ -15,7 +15,7 @@ import { belongsTo } from '../auth/access.service';
 import { TeamInvitesService } from '../team-invites/team-invites.service';
 
 /** Fields of a person that the web pages need (the role tells managers from developers). */
-const PERSON_FIELDS = 'name email role';
+const PERSON_FIELDS = 'name email role githubUsername';
 
 @Injectable()
 export class ProjectsService {

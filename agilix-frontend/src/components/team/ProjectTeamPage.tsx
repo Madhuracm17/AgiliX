@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
-import { getUsers, type User } from "../../api/users";
+import { getUsers, setUserGithubUsername, type User } from "../../api/users";
 import {
   addProjectMember,
   getProject,
@@ -275,6 +275,28 @@ export default function ProjectTeamPage() {
               <p className="project-team-manager">
                 {bosses.length > 0 ? `Manager: ${bosses.map((m) => m.name).join(", ")}` : " "}
               </p>
+              {member.role !== "admin" && (
+                <GithubUsernameField
+                  member={member}
+                  editable={canManage || isMe}
+                  onSaved={(githubUsername) =>
+                    setProject((current) =>
+                      current
+                        ? {
+                            ...current,
+                            owner:
+                              current.owner && sameId(current.owner, member._id)
+                                ? { ...current.owner, githubUsername }
+                                : current.owner,
+                            members: current.members.map((m) =>
+                              sameId(m, member._id) ? { ...m, githubUsername } : m,
+                            ),
+                          }
+                        : current,
+                    )
+                  }
+                />
+              )}
               {canRemove(member) && (
                 <button
                   className="secondary-button project-team-remove"
@@ -298,6 +320,70 @@ export default function ProjectTeamPage() {
               : "No other team members yet."}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * GitHub username of one team member. Managers and admins can set it for anyone
+ * on the team; everyone else only for themselves. It links their commits and
+ * pull requests in the project's repository to them (sprint health, burnout).
+ */
+function GithubUsernameField({
+  member,
+  editable,
+  onSaved,
+}: {
+  member: User;
+  editable: boolean;
+  onSaved: (githubUsername: string) => void;
+}) {
+  const saved = member.githubUsername ?? "";
+  const [value, setValue] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => setValue(saved), [saved]);
+
+  if (!editable) {
+    return (
+      <p className="project-team-github">
+        GitHub: {saved ? <strong>@{saved}</strong> : <span className="project-team-github-none">not linked</span>}
+      </p>
+    );
+  }
+
+  const cleaned = value.trim().replace(/^@/, "");
+  const save = async () => {
+    try {
+      setBusy(true);
+      setMessage("");
+      const updated = await setUserGithubUsername(member._id, cleaned);
+      onSaved(updated.githubUsername ?? "");
+      setMessage(cleaned ? "Saved" : "Removed");
+    } catch (err) {
+      setMessage(readError(err, "Could not save"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="project-team-github">
+      <label htmlFor={`github-${member._id}`}>GitHub username</label>
+      <div className="project-team-github-row">
+        <input
+          id={`github-${member._id}`}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="not linked"
+          maxLength={40}
+        />
+        <button type="button" onClick={save} disabled={busy || cleaned === saved}>
+          {busy ? "..." : "Save"}
+        </button>
+      </div>
+      {message && <small>{message}</small>}
     </div>
   );
 }

@@ -120,7 +120,10 @@ export class GithubActivityService {
       );
     }
 
-    const cacheKey = `${projectId}:${days}:${repo}`;
+    // The team is read first (one quick query) so that linking a GitHub username
+    // shows up straight away instead of after the cache expires.
+    const team = await this.loadTeam(project.owner, project.members ?? []);
+    const cacheKey = [projectId, days, repo, ...team.map((p) => `${p.id}=${p.githubUsername}`)].join('|');
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.at < CACHE_MS) return cached.report;
 
@@ -129,8 +132,7 @@ export class GithubActivityService {
     const now = Date.now();
     const since = new Date(now - days * DAY_MS);
 
-    const [team, commits, pulls] = await Promise.all([
-      this.loadTeam(project.owner, project.members ?? []),
+    const [commits, pulls] = await Promise.all([
       this.fetchCommits(owner, name, since),
       this.fetchPulls(owner, name, since),
     ]);
@@ -161,7 +163,8 @@ export class GithubActivityService {
 
     const unlinked = new Map<string, number>();
     const daily = new Map<string, number>();
-    for (let i = days - 1; i >= 0; i -= 1) daily.set(dayKey(now - i * DAY_MS, timezone), 0);
+    // One entry per calendar day from the day the window starts up to today.
+    for (let i = days; i >= 0; i -= 1) daily.set(dayKey(now - i * DAY_MS, timezone), 0);
 
     for (const commit of commits) {
       const at = commit.commit?.author?.date ?? commit.commit?.committer?.date;

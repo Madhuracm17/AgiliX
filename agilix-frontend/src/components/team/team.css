@@ -369,3 +369,55 @@
 .admin-member-card:hover {
   border-color: #829172;
 }
+
+/* GitHub username on each team card (links commits and pull requests to the person). */
+.project-team-github {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.project-team-github label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #565b4e;
+}
+
+.project-team-github-row {
+  display: flex;
+  gap: 6px;
+}
+
+.project-team-github-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.project-team-github-row button {
+  padding: 6px 12px;
+  font: inherit;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.project-team-github-row button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.project-team-github small {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.project-team-github-none {
+  opacity: 0.6;
+}

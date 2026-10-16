@@ -46,3 +46,11 @@ export function setMyGithubUsername(githubUsername: string) {
     body: JSON.stringify({ githubUsername }),
   });
 }
+
+/** Managers and admins link a team member's GitHub username ("" unlinks it). */
+export function setUserGithubUsername(userId: string, githubUsername: string) {
+  return api<User>(`/users/${userId}/github`, {
+    method: "PATCH",
+    body: JSON.stringify({ githubUsername }),
+  });
+}
