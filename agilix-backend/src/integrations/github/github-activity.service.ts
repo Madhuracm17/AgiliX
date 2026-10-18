@@ -29,6 +29,8 @@ export interface MemberGithubActivity {
   lateNightCommits: number;
   weekendCommits: number;
   lastCommitAt: string | null;
+  /** Days (team time zone, YYYY-MM-DD) on which they committed, oldest first. */
+  commitDays: string[];
   prsOpened: number;
   prsMerged: number;
   openPrs: number;
@@ -151,6 +153,7 @@ export class GithubActivityService {
         lateNightCommits: 0,
         weekendCommits: 0,
         lastCommitAt: null,
+        commitDays: [],
         prsOpened: 0,
         prsMerged: 0,
         openPrs: 0,
@@ -181,6 +184,7 @@ export class GithubActivityService {
         continue;
       }
       member.commits += 1;
+      if (!member.commitDays.includes(key)) member.commitDays.push(key);
       const { hour, weekday } = localParts(time, timezone);
       if (hour >= LATE_START_HOUR || hour < LATE_END_HOUR) member.lateNightCommits += 1;
       if (weekday === 'Sat' || weekday === 'Sun') member.weekendCommits += 1;
@@ -225,6 +229,7 @@ export class GithubActivityService {
       if (member) member.reviewsGiven += 1;
     }
 
+    for (const member of members) member.commitDays.sort();
     const notLinked = members.filter((m) => !m.linked).map((m) => m.name);
     const notes: string[] = [];
     if (notLinked.length) {

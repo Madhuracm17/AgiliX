@@ -41,9 +41,12 @@ export async function loadMcpIdentity(connection: Connection): Promise<McpIdenti
   const email = configuredMcpEmail();
   if (!email) throw new UnauthorizedException(NOT_CONFIGURED);
 
+  // Emails are stored as typed at sign-up (capitals included), so match without
+  // regard to case. The address is escaped, so it is matched literally.
+  const escaped = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const user = (await connection
     .model('User')
-    .findOne({ email })
+    .findOne({ email: { $regex: `^${escaped}$`, $options: 'i' } })
     .select('name email role')
     .lean()
     .exec()) as { _id: unknown; name?: string; email?: string; role?: string } | null;

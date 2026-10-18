@@ -109,6 +109,13 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
       ? "Kanban Board"
       : "Scrum Board";
 
+  const onInsights = /^\/projects\/[^/]+\/ai-insights$/.test(location.pathname);
+  // AI Insights (sprint risk, team health) of the same project the board link opens.
+  const openInsights = () => {
+    navigate(boardTarget ? `/projects/${boardTarget._id}/ai-insights` : "/projects");
+    onClose();
+  };
+
   const openBoard = () => {
     // With no project yet, the Projects page explains what to do.
     navigate(boardTarget ? boardPath(boardTarget) : "/projects");
@@ -152,6 +159,15 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
                 onClick={openBoard}
               >
                 {boardLabel}
+              </button>
+
+              <button
+                type="button"
+                tabIndex={open ? 0 : -1}
+                className={`side-menu-link ${onInsights ? "active" : ""}`}
+                onClick={openInsights}
+              >
+                AI Insights
               </button>
             </>
           )}

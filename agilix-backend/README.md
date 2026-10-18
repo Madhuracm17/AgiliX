@@ -114,6 +114,9 @@ exactly like the Reports pages.
 | `agilix_recommend_priority` | project member | AI: low / medium / high with reasoning (ignores the current priority) |
 | `agilix_suggest_tasks` | project member | AI: missing tasks for the backlog, with priority and reasoning |
 | `agilix_get_kanban_insights` | project member | AI: Kanban board health, bottlenecks and recommendations |
+| `agilix_get_github_activity` | manager / admin | GitHub activity per member from the project's linked repo, read **through GitHub's MCP server** |
+| `agilix_predict_burnout_risk` | manager / admin | AI: burnout risk per member (low / medium / high, score, reasons, recommendations) with the measured signals |
+| `agilix_get_sprint_health` | manager / admin | AI: sprint health (active sprint) or flow health (Kanban), with forecast, risks and recommendations |
 
 The AI tools call OpenRouter (`OPENROUTER_API_KEY`), can take up to ~30 s, and
 only suggest: nothing is created or saved. `Error 503` means every model failed.
@@ -174,3 +177,43 @@ Rules:
 
 Files you normally do **not** need to change: `mcp-main.ts`, `mcp-process-setup.ts`,
 `mcp-server.factory.ts`, `mcp-results.ts`, `mcp-validation.ts`, `stderr-logger.ts`.
+## AI team insights (AgiliX as an MCP client)
+
+AgiliX also **uses** other MCP servers. `src/integrations/github/github-mcp.client.ts`
+connects to GitHub's remote MCP server (`https://api.githubcopilot.com/mcp/`,
+read-only, `repos` + `pull_requests` toolsets) with `GITHUB_MCP_TOKEN`, and reads
+the repository linked to each project (**Edit project → GitHub repository**).
+People are matched to commits by the **GitHub username** on the Team page or in
+the profile menu.
+
+`src/insights/` turns the data into AI insights:
+
+1. `TeamContextService` builds the context payload for a project: per member,
+   tracked hours (late-night 22:00–06:00 and weekend hours in `TEAM_TIMEZONE`),
+   longest day, consecutive working days, open / ageing / finished tasks, and
+   GitHub commits, PRs and reviews. Calendar meetings will be added here.
+2. `BurnoutRiskService` and `SprintHealthService` send those **calculated**
+   numbers to the LLM (`LlmService`, OpenRouter) and validate the JSON answer
+   (levels, score ranges, one entry per member). The numbers are returned with
+   the verdict as evidence.
+
+| Route (managers and admins) | Purpose |
+|---|---|
+| `GET /integrations/github/status` | Is GitHub connected? Lists GitHub's MCP tools |
+| `GET /integrations/github/:projectId/activity?days=14` | GitHub activity per member |
+| `GET /insights/:projectId/context?days=14` | The raw context payload (no AI call) |
+| `GET /insights/:projectId/burnout?days=14&refresh=1` | AI burnout risk per member |
+| `GET /insights/:projectId/sprint-health?refresh=1` | AI sprint / flow health |
+
+Results are cached for 10 minutes; `refresh=1` runs the analysis again. In the
+web app: **AI Insights → AI Team Health**.
+
+### Demo data
+
+`npm run seed:demo` creates a separate Scrum project **"AgiliX Demo"** (active
+Sprint 3, two finished sprints, 19 tasks, two weeks of tracked time, linked to
+the AgiliX GitHub repo) owned by the manager in `MCP_USER_EMAIL`. Its three demo
+users (`jovika@demo.agilix.local`, `punya@…`, `madhura@…`, password `Demo@1234`)
+have deliberately different work patterns, so burnout risk and sprint health
+have something to find. It never changes real projects or users.
+`npm run seed:demo -- --remove` deletes everything it created.

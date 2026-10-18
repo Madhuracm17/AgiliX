@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { GithubActivityService } from '../../integrations/github/github-activity.service';
+import { BurnoutRiskService } from '../../insights/burnout-risk.service';
+import { SprintHealthService } from '../../insights/sprint-health.service';
 import { defineMcpTool } from '../mcp-tool.types';
 import { actingUser, objectId, requireTeamReports } from './tool-helpers';
 
@@ -21,5 +23,50 @@ export const githubActivityTool = defineMcpTool({
     requireTeamReports(user);
     await access.assertProject(user, projectId);
     return ctx.get(GithubActivityService).getActivity(projectId, days);
+  },
+});
+
+export const burnoutRiskTool = defineMcpTool({
+  name: 'agilix_predict_burnout_risk',
+  title: 'AI: burnout risk per team member',
+  description:
+    'Managers and admins. Collects each team member\'s work signals for the last 7, 14 or 30 days ' +
+    '(tracked hours, late-night and weekend work, consecutive working days, open and ageing tasks, and ' +
+    'GitHub commits / PRs / reviews from the GitHub MCP server) and has the LLM assess burnout risk: ' +
+    'low / medium / high, a 0-100 score, reasons quoting the numbers, and recommendations for the manager. ' +
+    'The measured signals are included as evidence. Takes up to about 30 seconds; results are cached for 10 minutes.',
+  readOnly: true,
+  inputSchema: {
+    projectId: objectId('project'),
+    days: z.union([z.literal(7), z.literal(14), z.literal(30)]).optional().describe('7, 14 or 30.'),
+    refresh: z.boolean().optional().describe('true = ignore the 10-minute cache.'),
+  },
+  handler: async ({ projectId, days, refresh }, ctx) => {
+    const { user, access } = await actingUser(ctx);
+    requireTeamReports(user);
+    await access.assertProject(user, projectId);
+    return ctx.get(BurnoutRiskService).assess(projectId, days, refresh ?? false);
+  },
+});
+
+export const sprintHealthTool = defineMcpTool({
+  name: 'agilix_get_sprint_health',
+  title: 'AI: sprint / flow health',
+  description:
+    'Managers and admins. For a Scrum project with an active sprint: progress vs time, scope changes, ' +
+    'ageing work, velocity and GitHub activity are judged by the LLM into healthy / at_risk / critical, a 0-100 ' +
+    'score, a completion forecast, risks and recommendations. For Kanban (or no active sprint) it judges flow ' +
+    'health instead: WIP vs limit, throughput trend, cycle time, items stuck in progress. Facts are included ' +
+    'as evidence. Takes up to about 30 seconds; results are cached for 10 minutes.',
+  readOnly: true,
+  inputSchema: {
+    projectId: objectId('project'),
+    refresh: z.boolean().optional().describe('true = ignore the 10-minute cache.'),
+  },
+  handler: async ({ projectId, refresh }, ctx) => {
+    const { user, access } = await actingUser(ctx);
+    requireTeamReports(user);
+    await access.assertProject(user, projectId);
+    return ctx.get(SprintHealthService).assess(projectId, refresh ?? false);
   },
 });

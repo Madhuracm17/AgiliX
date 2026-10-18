@@ -225,7 +225,7 @@ export default function ReportsPage() {
           </div>
         )}
 
-        {isScrum && !isAdmin && (
+        {!isAdmin && (
           <button
             className="secondary-button"
             onClick={() => navigate(`/projects/${projectId}/ai-insights`)}

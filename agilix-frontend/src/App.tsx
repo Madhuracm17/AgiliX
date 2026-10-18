@@ -15,6 +15,7 @@ import ScrumBoardPage from "./components/scrum/ScrumBoardPage";
 import NewTaskPage from "./components/scrum/NewTaskPage";
 import ProjectTeamPage from "./components/team/ProjectTeamPage";
 import ReportsPage from "./components/reports/ReportsPage";
+import TeamHealthPanel from "./components/ai/TeamHealthPanel";
 import ProjectCard from "./components/projects/ProjectCard";
 import ProjectSettings from "./components/projects/ProjectSettings";
 import ApprovalsPage from "./components/approvals/ApprovalsPage";
@@ -1064,6 +1065,30 @@ function ProjectOverviewBody() {
           </button>
         </div>
 
+        {currentUser.role !== "admin" && (
+          <div className="dashboard-card">
+            <div className="dashboard-card-header">
+              <div>
+                <span className="eyebrow">AI INSIGHTS</span>
+                <h2>Team Health</h2>
+              </div>
+            </div>
+
+            <p>
+              {currentUser.role === "manager"
+                ? "AI sprint health and burnout risk for each person, from tasks, tracked time and GitHub activity."
+                : "AI sprint risk for the active sprint."}
+            </p>
+
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
+            >
+              Open AI Insights
+            </button>
+          </div>
+        )}
+
         <div className="dashboard-card">
           <div className="dashboard-card-header">
             <div>
@@ -1134,6 +1159,9 @@ function SprintPage() {
 function AiInsightsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
+  // Team health (burnout risk, sprint health) is a team-level report: managers and admins.
+  const canSeeTeamHealth = currentUser.role === "manager" || currentUser.role === "admin";
 
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [selectedSprintId, setSelectedSprintId] = useState("");
@@ -1236,7 +1264,10 @@ function AiInsightsPage() {
       {!loading && sprints.length === 0 && (
         <div className="empty-state">
           <h2>No active sprint</h2>
-          <p>Start a sprint to run an AI risk check.</p>
+          <p>
+            Start a sprint to run an AI risk check.
+            {canSeeTeamHealth && " Team health below works without a sprint too."}
+          </p>
         </div>
       )}
 
@@ -1286,6 +1317,8 @@ function AiInsightsPage() {
           </div>
         </div>
       )}
+
+      {canSeeTeamHealth && projectId && <TeamHealthPanel projectId={projectId} />}
     </div>
   );
 }
@@ -1427,12 +1460,20 @@ function KanbanBoardPage() {
 
         <div className="scrum-header-actions">
           {currentUser.role !== "admin" && (
-            <button
-              className="secondary-button"
-              onClick={() => navigate(`/projects/${projectId}/reports`)}
-            >
-              Reports
-            </button>
+            <>
+              <button
+                className="secondary-button"
+                onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
+              >
+                AI Insights
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => navigate(`/projects/${projectId}/reports`)}
+              >
+                Reports
+              </button>
+            </>
           )}
           <button className="primary-button" onClick={() => setShowForm(true)}>
             + Create Task

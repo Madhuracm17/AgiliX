@@ -19,7 +19,7 @@ import {
   recommendPriorityTool,
   suggestTasksTool,
 } from './ai.tools';
-import { githubActivityTool } from './integration.tools';
+import { burnoutRiskTool, githubActivityTool, sprintHealthTool } from './integration.tools';
 
 /**
  * Every tool exposed by the AgiliX MCP server.
@@ -66,4 +66,8 @@ export const MCP_TOOLS: AnyMcpToolDefinition[] = [
 
   // Outside data read through other MCP servers (AgiliX as MCP client)
   githubActivityTool,
+
+  // AI insights over the combined context (AgiliX + GitHub MCP)
+  burnoutRiskTool,
+  sprintHealthTool,
 ];
