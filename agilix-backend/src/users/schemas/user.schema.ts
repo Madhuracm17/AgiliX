@@ -34,6 +34,11 @@ export class User {
 
   @Prop({ enum: UserRole, default: UserRole.DEVELOPER })
   role: UserRole;
+
+  // GitHub login (e.g. "octocat"), used to match commits and pull requests in a
+  // project's linked repo to this person. Empty = not linked.
+  @Prop({ default: '' })
+  githubUsername: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

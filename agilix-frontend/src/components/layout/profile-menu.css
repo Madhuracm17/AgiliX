@@ -104,3 +104,47 @@
 .profile-menu-link:hover {
   background: #f3eee1;
 }
+
+.profile-menu-github {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.profile-menu-github label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.profile-menu-github-row {
+  display: flex;
+  gap: 6px;
+}
+
+.profile-menu-github-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.profile-menu-github-row button {
+  padding: 6px 12px;
+  font: inherit;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.profile-menu-github-row button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.profile-menu-github small {
+  font-size: 11px;
+  opacity: 0.75;
+}

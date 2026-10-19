@@ -105,6 +105,29 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * Links (or with "" unlinks) a GitHub username. Two accounts cannot share one
+   * GitHub login, otherwise commits would be counted for both people.
+   */
+  async setGithubUsername(id: string, githubUsername: string): Promise<User> {
+    if (githubUsername) {
+      // The DTO only allows letters, digits and hyphens, so the value is safe in a regex.
+      const taken = await this.userModel
+        .findOne({ _id: { $ne: id }, githubUsername: { $regex: `^${githubUsername}$`, $options: 'i' } })
+        .select('_id')
+        .lean()
+        .exec();
+      if (taken) {
+        throw new ConflictException('That GitHub username is already linked to another AgiliX account.');
+      }
+    }
+    const user = await this.userModel
+      .findByIdAndUpdate(id, { githubUsername }, { new: true })
+      .select('-passwordHash');
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
   async findOne(id: string): Promise<User> {
     const user = await this.userModel.findById(id).select('-passwordHash');
     if (!user) throw new NotFoundException('User not found');

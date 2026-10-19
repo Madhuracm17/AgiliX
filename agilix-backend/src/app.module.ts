@@ -14,6 +14,8 @@ import { AccessModule } from './auth/access.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { TeamInvitesModule } from './team-invites/team-invites.module';
+import { IntegrationsModule } from './integrations/integrations.module';
+import { InsightsModule } from './insights/insights.module';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { TeamInvitesModule } from './team-invites/team-invites.module';
     NotificationsModule,
     ApprovalsModule,
     TeamInvitesModule,
+    IntegrationsModule,
+    InsightsModule,
   ],
 })
 export class AppModule {}

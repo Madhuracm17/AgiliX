@@ -33,6 +33,11 @@ export class Project {
   // (the WIP limit). 0 means no limit. Older projects have no value: no limit.
   @Prop({ type: Number, default: 0, min: 0 })
   wipLimit: number;
+
+  // The project's GitHub repository as "owner/name" (e.g. "Madhuracm17/AgiliX").
+  // Read through the GitHub MCP server for sprint health and burnout. Empty = not linked.
+  @Prop({ default: '' })
+  githubRepo: string;
 }
 
 export const ProjectSchema = SchemaFactory.createForClass(Project);

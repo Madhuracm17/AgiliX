@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { initialOf, useAuth } from "../../auth/auth-context";
+import { getUser, setMyGithubUsername } from "../../api/users";
 import "./profile-menu.css";
 
 /** "developer" → "Developer" */
@@ -14,6 +15,10 @@ function roleLabel(role: string): string {
 export default function ProfileMenu() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [github, setGithub] = useState("");
+  const [savedGithub, setSavedGithub] = useState("");
+  const [githubStatus, setGithubStatus] = useState("");
+  const [savingGithub, setSavingGithub] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   // Close when clicking elsewhere or pressing Escape.
@@ -36,6 +41,39 @@ export default function ProfileMenu() {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+
+  // Load the linked GitHub username each time the card opens.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setGithubStatus("");
+    getUser(user._id)
+      .then((me) => {
+        if (cancelled) return;
+        setGithub(me.githubUsername ?? "");
+        setSavedGithub(me.githubUsername ?? "");
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, user._id]);
+
+  const saveGithub = async () => {
+    const value = github.trim().replace(/^@/, "");
+    try {
+      setSavingGithub(true);
+      setGithubStatus("");
+      const me = await setMyGithubUsername(value);
+      setGithub(me.githubUsername ?? "");
+      setSavedGithub(me.githubUsername ?? "");
+      setGithubStatus(value ? "Saved" : "Removed");
+    } catch (err) {
+      setGithubStatus(readMessage(err));
+    } finally {
+      setSavingGithub(false);
+    }
+  };
 
   return (
     <div className="profile-menu" ref={rootRef}>
@@ -62,6 +100,27 @@ export default function ProfileMenu() {
             </div>
           </div>
 
+          <div className="profile-menu-github">
+            <label htmlFor="profile-github">GitHub username</label>
+            <div className="profile-menu-github-row">
+              <input
+                id="profile-github"
+                value={github}
+                onChange={(e) => setGithub(e.target.value)}
+                placeholder="e.g. octocat"
+                maxLength={40}
+              />
+              <button
+                type="button"
+                onClick={saveGithub}
+                disabled={savingGithub || github.trim().replace(/^@/, "") === savedGithub}
+              >
+                {savingGithub ? "..." : "Save"}
+              </button>
+            </div>
+            <small>{githubStatus || "Links your commits and pull requests to you."}</small>
+          </div>
+
           <button
             type="button"
             className="profile-menu-logout"
@@ -74,4 +133,17 @@ export default function ProfileMenu() {
       )}
     </div>
   );
+}
+
+/** The backend sends errors as JSON ({ message }); show just the message. */
+function readMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  try {
+    const parsed = JSON.parse(raw) as { message?: string | string[] };
+    if (Array.isArray(parsed.message)) return parsed.message.join(" ");
+    if (parsed.message) return parsed.message;
+  } catch {
+    /* not JSON */
+  }
+  return raw || "Could not save";
 }

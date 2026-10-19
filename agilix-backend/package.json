@@ -9,7 +9,8 @@
     "start:prod": "node dist/main",
     "mcp": "node dist/mcp/mcp-main.js",
     "mcp:test": "node scripts/mcp-smoke-test.mjs",
-    "mcp:inspect": "npx @modelcontextprotocol/inspector node dist/mcp/mcp-main.js"
+    "mcp:inspect": "npx @modelcontextprotocol/inspector node dist/mcp/mcp-main.js",
+    "seed:demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",

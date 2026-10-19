@@ -1,5 +1,8 @@
 import { INestApplicationContext, Logger } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getConnectionToken } from '@nestjs/mongoose';
+import type { Connection } from 'mongoose';
+import { loadMcpIdentity } from './mcp-identity';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   AGILIX_MCP_SERVER_INFO,
@@ -49,6 +52,7 @@ export function createAgilixMcpServer(
 
   const context: McpToolContext = {
     get: (token) => app.get(token, { strict: false }),
+    user: () => loadMcpIdentity(app.get<Connection>(getConnectionToken(), { strict: false })),
   };
 
   /*

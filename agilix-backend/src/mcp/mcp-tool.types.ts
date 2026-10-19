@@ -1,5 +1,6 @@
 import type { Type } from '@nestjs/common';
 import type { z } from 'zod';
+import type { McpIdentity } from './mcp-identity';
 
 /** Tool input described as a zod "raw shape", e.g. { projectId: z.string() }. */
 export type McpInputShape = Record<string, z.ZodType>;
@@ -15,6 +16,13 @@ export interface McpToolContext {
    * instead of duplicating business logic.
    */
   get<T = unknown>(token: Type<T> | string | symbol): T;
+
+  /**
+   * The AgiliX account this MCP server acts as (MCP_USER_EMAIL). Business
+   * tools must call this and pass the result to AccessService / requireRole,
+   * exactly like the HTTP controllers do. Throws 401 when not configured.
+   */
+  user(): Promise<McpIdentity>;
 }
 
 /** Definition of one MCP tool. */

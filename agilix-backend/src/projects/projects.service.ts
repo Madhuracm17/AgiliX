@@ -15,7 +15,7 @@ import { belongsTo } from '../auth/access.service';
 import { TeamInvitesService } from '../team-invites/team-invites.service';
 
 /** Fields of a person that the web pages need (the role tells managers from developers). */
-const PERSON_FIELDS = 'name email role';
+const PERSON_FIELDS = 'name email role githubUsername';
 
 @Injectable()
 export class ProjectsService {
@@ -129,6 +129,7 @@ export class ProjectsService {
     if (dto.description !== undefined) changes.description = dto.description.trim();
     if (dto.status !== undefined) changes.status = dto.status;
     if (dto.wipLimit !== undefined) changes.wipLimit = dto.wipLimit;
+    if (dto.githubRepo !== undefined) changes.githubRepo = dto.githubRepo.trim();
     const project = await this.projectModel.findByIdAndUpdate(id, changes, { new: true });
     if (!project) throw new NotFoundException('Project not found');
     return project;

@@ -20,6 +20,8 @@ export interface Project {
   status?: ProjectStatus;
   /** Kanban only: most tasks allowed in In Progress at once. 0 or missing = no limit. */
   wipLimit?: number;
+  /** Linked GitHub repository as "owner/name". Empty or missing = not linked. */
+  githubRepo?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -64,6 +66,8 @@ export interface UpdateProjectData {
   description?: string;
   status?: ProjectStatus;
   wipLimit?: number;
+  /** "owner/name", or "" to unlink. */
+  githubRepo?: string;
 }
 
 export function updateProject(id: string, data: UpdateProjectData) {

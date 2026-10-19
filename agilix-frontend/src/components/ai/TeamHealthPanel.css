@@ -1,0 +1,290 @@
+/* ---- AI Team Health panel (sprint / flow health + burnout risk) ---- */
+
+.team-health {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.team-health-head h2 {
+  margin: 4px 0 6px;
+  font-size: 20px;
+}
+
+.team-health-head p {
+  margin: 0;
+  max-width: 720px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4a4f46;
+}
+
+.team-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.team-health-card {
+  background: #ffffff;
+  border: 1px solid #e6dfcd;
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.team-health-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.team-health-card-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.team-health-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.team-health-controls select {
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid #d8d2c2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.team-health-empty,
+.team-health-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #626a5c;
+}
+
+.team-health-error {
+  color: #b23a3a;
+}
+
+.team-health-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.team-health-result h4 {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #565b4e;
+}
+
+.team-health-result ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #34382f;
+}
+
+.team-health-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #34382f;
+}
+
+.team-health-forecast {
+  margin: 0;
+  font-size: 13px;
+  color: #4a4f46;
+}
+
+.team-health-verdict {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Status / risk badges */
+.team-health-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.badge-healthy,
+.badge-low {
+  background: #e2f3e8;
+  color: #17713f;
+}
+
+.badge-at_risk,
+.badge-medium {
+  background: #fbefd5;
+  color: #8a5a00;
+}
+
+.badge-critical,
+.badge-high {
+  background: #fbe1e1;
+  color: #a82c2c;
+}
+
+/* Score bar */
+.team-health-score {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.team-health-score-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: #eeebe2;
+  overflow: hidden;
+}
+
+.team-health-score-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #5b7a4a;
+}
+
+.health-at_risk .team-health-score-fill {
+  background: #b8790a;
+}
+
+.health-critical .team-health-score-fill {
+  background: #d43f3f;
+}
+
+/* One team member */
+.team-health-member {
+  border: 1px solid #ece6d6;
+  border-left-width: 4px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.member-low {
+  border-left-color: #1e9e5a;
+}
+
+.member-medium {
+  border-left-color: #b8790a;
+}
+
+.member-high {
+  border-left-color: #d43f3f;
+}
+
+.team-health-member-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.team-health-member-name {
+  flex: 1;
+  font-weight: 700;
+  font-size: 14px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-health-member-score {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a4f46;
+  min-width: 26px;
+  text-align: right;
+}
+
+.team-health-member-body {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Evidence chips: the measured numbers behind the verdict */
+.team-health-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.team-health-evidence span {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f4f1e8;
+  font-size: 12px;
+  color: #4a4f46;
+}
+
+.team-health-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid #f0ebde;
+  font-size: 11px;
+  color: #7a7f72;
+}
+
+/* ---- AI daily standup ---- */
+.standup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.standup-person {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #ece6d6;
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.standup-person strong {
+  font-size: 14px;
+}
+
+.standup-person .standup-blockers {
+  color: #a82c2c;
+}
