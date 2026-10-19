@@ -117,6 +117,7 @@ exactly like the Reports pages.
 | `agilix_get_github_activity` | manager / admin | GitHub activity per member from the project's linked repo, read **through GitHub's MCP server** |
 | `agilix_predict_burnout_risk` | manager / admin | AI: burnout risk per member (low / medium / high, score, reasons, recommendations) with the measured signals |
 | `agilix_get_sprint_health` | manager / admin | AI: sprint health (active sprint) or flow health (Kanban), with forecast, risks and recommendations |
+| `agilix_get_standup_summary` | project member | AI: daily standup per person (yesterday / today / blockers) from task moves and commit messages |
 
 The AI tools call OpenRouter (`OPENROUTER_API_KEY`), can take up to ~30 s, and
 only suggest: nothing is created or saved. `Error 503` means every model failed.
@@ -204,6 +205,7 @@ the profile menu.
 | `GET /insights/:projectId/context?days=14` | The raw context payload (no AI call) |
 | `GET /insights/:projectId/burnout?days=14&refresh=1` | AI burnout risk per member |
 | `GET /insights/:projectId/sprint-health?refresh=1` | AI sprint / flow health |
+| `GET /insights/:projectId/standup?refresh=1` | AI daily standup (any project member) |
 
 Results are cached for 10 minutes; `refresh=1` runs the analysis again. In the
 web app: **AI Insights → AI Team Health**.

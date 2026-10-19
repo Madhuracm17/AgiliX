@@ -94,3 +94,29 @@ export function getBurnoutRisk(projectId: string, days = 14, refresh = false) {
 export function getSprintHealth(projectId: string, refresh = false) {
   return api<SprintHealthReport>(`/insights/${projectId}/sprint-health${refresh ? "?refresh=1" : ""}`);
 }
+
+export interface MemberStandup {
+  userId: string;
+  name: string;
+  yesterday: string[];
+  today: string[];
+  blockers: string[];
+  facts: {
+    commits: { message: string; at: string }[];
+    finished: string[];
+    moved: { title: string; to: string; at: string }[];
+  };
+}
+
+export interface StandupReport {
+  sinceLabel: string;
+  generatedAt: string;
+  github: "ok" | "not_linked" | "not_configured" | "error";
+  headline: string;
+  members: MemberStandup[];
+}
+
+/** Every project member can read the standup. */
+export function getStandup(projectId: string, refresh = false) {
+  return api<StandupReport>(`/insights/${projectId}/standup${refresh ? "?refresh=1" : ""}`);
+}

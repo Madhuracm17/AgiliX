@@ -6,6 +6,7 @@ import { TasksModule } from '../tasks/tasks.module';
 import { BurnoutRiskService } from './burnout-risk.service';
 import { InsightsController } from './insights.controller';
 import { SprintHealthService } from './sprint-health.service';
+import { StandupService } from './standup.service';
 import { TeamContextService } from './team-context.service';
 
 /**
@@ -16,7 +17,7 @@ import { TeamContextService } from './team-context.service';
 @Module({
   imports: [AiModule, IntegrationsModule, SprintsModule, TasksModule],
   controllers: [InsightsController],
-  providers: [TeamContextService, BurnoutRiskService, SprintHealthService],
-  exports: [TeamContextService, BurnoutRiskService, SprintHealthService],
+  providers: [TeamContextService, BurnoutRiskService, SprintHealthService, StandupService],
+  exports: [TeamContextService, BurnoutRiskService, SprintHealthService, StandupService],
 })
 export class InsightsModule {}

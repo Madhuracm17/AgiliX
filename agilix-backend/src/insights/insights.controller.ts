@@ -6,6 +6,7 @@ import { requireRole } from '../auth/roles';
 import { UserRole } from '../users/schemas/user.schema';
 import { BurnoutRiskService } from './burnout-risk.service';
 import { SprintHealthService } from './sprint-health.service';
+import { StandupService } from './standup.service';
 import { TeamContextService } from './team-context.service';
 
 const TEAM_INSIGHTS_MESSAGE =
@@ -22,8 +23,25 @@ export class InsightsController {
     private readonly burnout: BurnoutRiskService,
     private readonly health: SprintHealthService,
     private readonly context: TeamContextService,
+    private readonly standup: StandupService,
     private readonly access: AccessService,
   ) {}
+
+  /**
+   * AI daily standup: what each person did since the previous working day, what
+   * is next, what is blocking. Shared with the whole team, so every project
+   * member may read it (it contains no hours or risk scores).
+   */
+  @Header('Cache-Control', 'no-store')
+  @Get(':projectId/standup')
+  async standupSummary(
+    @Param('projectId') projectId: string,
+    @Query('refresh') refresh: string | undefined,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.access.assertProject(user, projectId);
+    return this.standup.summarize(projectId, refresh === '1' || refresh === 'true');
+  }
 
   /** AI burnout risk per team member. `?days=` 7, 14 or 30 (default 14). */
   @Header('Cache-Control', 'no-store')

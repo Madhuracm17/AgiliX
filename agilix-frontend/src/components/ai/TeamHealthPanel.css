@@ -263,3 +263,28 @@
   font-size: 11px;
   color: #7a7f72;
 }
+
+/* ---- AI daily standup ---- */
+.standup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.standup-person {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #ece6d6;
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.standup-person strong {
+  font-size: 14px;
+}
+
+.standup-person .standup-blockers {
+  color: #a82c2c;
+}

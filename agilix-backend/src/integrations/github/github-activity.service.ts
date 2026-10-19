@@ -67,7 +67,7 @@ type Person = { login?: string } | string | null | undefined;
 interface RawCommit {
   sha?: string;
   author?: Person;
-  commit?: { author?: { name?: string; date?: string }; committer?: { date?: string } };
+  commit?: { message?: string; author?: { name?: string; date?: string }; committer?: { date?: string } };
 }
 interface RawPull {
   number?: number;
@@ -263,6 +263,26 @@ export class GithubActivityService {
     };
     this.cache.set(cacheKey, { at: now, report });
     return report;
+  }
+
+  /**
+   * Commits on the repo's default branch since a moment, newest first:
+   * author login, first line of the message and time. Used by the standup summary.
+   */
+  async getRecentCommits(
+    repo: string,
+    since: Date,
+  ): Promise<{ login: string | null; author: string; message: string; at: string }[]> {
+    const [owner, name] = repo.split('/');
+    const commits = await this.fetchCommits(owner, name, since);
+    return commits
+      .map((c) => ({
+        login: loginOf(c.author),
+        author: c.commit?.author?.name ?? '',
+        message: (c.commit?.message ?? '').split('\n')[0].trim().slice(0, 140),
+        at: c.commit?.author?.date ?? c.commit?.committer?.date ?? '',
+      }))
+      .filter((c) => c.at);
   }
 
   /** Owner + members with the fields needed to match GitHub logins. */

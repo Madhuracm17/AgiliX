@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { GithubActivityService } from '../../integrations/github/github-activity.service';
 import { BurnoutRiskService } from '../../insights/burnout-risk.service';
 import { SprintHealthService } from '../../insights/sprint-health.service';
+import { StandupService } from '../../insights/standup.service';
 import { defineMcpTool } from '../mcp-tool.types';
 import { actingUser, objectId, requireTeamReports } from './tool-helpers';
 
@@ -68,5 +69,25 @@ export const sprintHealthTool = defineMcpTool({
     requireTeamReports(user);
     await access.assertProject(user, projectId);
     return ctx.get(SprintHealthService).assess(projectId, refresh ?? false);
+  },
+});
+
+export const standupTool = defineMcpTool({
+  name: 'agilix_get_standup_summary',
+  title: 'AI: daily standup summary',
+  description:
+    'Any project member. The daily standup written by the LLM from recorded activity since the previous ' +
+    'working day: per person what they did (tasks moved or finished, commit messages from the GitHub MCP ' +
+    'server), what they will work on today, and blockers (work sent back from review, tasks stuck in ' +
+    'progress), plus a one-line team headline. Can take up to a minute; cached for 10 minutes.',
+  readOnly: true,
+  inputSchema: {
+    projectId: objectId('project'),
+    refresh: z.boolean().optional().describe('true = ignore the 10-minute cache.'),
+  },
+  handler: async ({ projectId, refresh }, ctx) => {
+    const { user, access } = await actingUser(ctx);
+    await access.assertProject(user, projectId);
+    return ctx.get(StandupService).summarize(projectId, refresh ?? false);
   },
 });

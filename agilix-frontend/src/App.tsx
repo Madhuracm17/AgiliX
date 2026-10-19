@@ -16,6 +16,7 @@ import NewTaskPage from "./components/scrum/NewTaskPage";
 import ProjectTeamPage from "./components/team/ProjectTeamPage";
 import ReportsPage from "./components/reports/ReportsPage";
 import TeamHealthPanel from "./components/ai/TeamHealthPanel";
+import StandupPanel from "./components/ai/StandupPanel";
 import ProjectCard from "./components/projects/ProjectCard";
 import ProjectSettings from "./components/projects/ProjectSettings";
 import ApprovalsPage from "./components/approvals/ApprovalsPage";
@@ -1318,6 +1319,7 @@ function AiInsightsPage() {
         </div>
       )}
 
+      {projectId && <StandupPanel projectId={projectId} />}
       {canSeeTeamHealth && projectId && <TeamHealthPanel projectId={projectId} />}
     </div>
   );
