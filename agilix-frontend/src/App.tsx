@@ -16,6 +16,7 @@ import NewTaskPage from "./components/scrum/NewTaskPage";
 import ProjectTeamPage from "./components/team/ProjectTeamPage";
 import ReportsPage from "./components/reports/ReportsPage";
 import TeamHealthPanel from "./components/ai/TeamHealthPanel";
+import ActivityPage from "./components/collab/ActivityPage";
 import StandupPanel from "./components/ai/StandupPanel";
 import ProjectCard from "./components/projects/ProjectCard";
 import ProjectSettings from "./components/projects/ProjectSettings";
@@ -1772,6 +1773,11 @@ function App() {
           <Route
             path="/projects/:projectId/ai-insights"
             element={<NotForAdmin><AiInsightsPage /></NotForAdmin>}
+          />
+
+          <Route
+            path="/projects/:projectId/activity"
+            element={<ActivityPage />}
           />
 
           <Route

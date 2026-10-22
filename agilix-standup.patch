@@ -1,0 +1,702 @@
+diff --git a/agilix-backend/README.md b/agilix-backend/README.md
+index 36d888d..e14dce1 100644
+--- a/agilix-backend/README.md
++++ b/agilix-backend/README.md
+@@ -117,6 +117,7 @@ exactly like the Reports pages.
+ | `agilix_get_github_activity` | manager / admin | GitHub activity per member from the project's linked repo, read **through GitHub's MCP server** |
+ | `agilix_predict_burnout_risk` | manager / admin | AI: burnout risk per member (low / medium / high, score, reasons, recommendations) with the measured signals |
+ | `agilix_get_sprint_health` | manager / admin | AI: sprint health (active sprint) or flow health (Kanban), with forecast, risks and recommendations |
++| `agilix_get_standup_summary` | project member | AI: daily standup per person (yesterday / today / blockers) from task moves and commit messages |
+ 
+ The AI tools call OpenRouter (`OPENROUTER_API_KEY`), can take up to ~30 s, and
+ only suggest: nothing is created or saved. `Error 503` means every model failed.
+@@ -204,6 +205,7 @@ the profile menu.
+ | `GET /insights/:projectId/context?days=14` | The raw context payload (no AI call) |
+ | `GET /insights/:projectId/burnout?days=14&refresh=1` | AI burnout risk per member |
+ | `GET /insights/:projectId/sprint-health?refresh=1` | AI sprint / flow health |
++| `GET /insights/:projectId/standup?refresh=1` | AI daily standup (any project member) |
+ 
+ Results are cached for 10 minutes; `refresh=1` runs the analysis again. In the
+ web app: **AI Insights → AI Team Health**.
+diff --git a/agilix-backend/scripts/mcp-smoke-test.mjs b/agilix-backend/scripts/mcp-smoke-test.mjs
+index 92f9e53..9503b87 100644
+--- a/agilix-backend/scripts/mcp-smoke-test.mjs
++++ b/agilix-backend/scripts/mcp-smoke-test.mjs
+@@ -116,6 +116,7 @@ try {
+     'agilix_get_github_activity',
+     'agilix_predict_burnout_risk',
+     'agilix_get_sprint_health',
++    'agilix_get_standup_summary',
+   ];
+   const missing = EXPECTED_TOOLS.filter((name) => !toolNames.includes(name));
+   check(missing.length === 0, `All ${EXPECTED_TOOLS.length} business tools are registered${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`);
+diff --git a/agilix-backend/src/insights/insights.controller.ts b/agilix-backend/src/insights/insights.controller.ts
+index 2244c76..64c3929 100644
+--- a/agilix-backend/src/insights/insights.controller.ts
++++ b/agilix-backend/src/insights/insights.controller.ts
+@@ -6,6 +6,7 @@ import { requireRole } from '../auth/roles';
+ import { UserRole } from '../users/schemas/user.schema';
+ import { BurnoutRiskService } from './burnout-risk.service';
+ import { SprintHealthService } from './sprint-health.service';
++import { StandupService } from './standup.service';
+ import { TeamContextService } from './team-context.service';
+ 
+ const TEAM_INSIGHTS_MESSAGE =
+@@ -22,9 +23,26 @@ export class InsightsController {
+     private readonly burnout: BurnoutRiskService,
+     private readonly health: SprintHealthService,
+     private readonly context: TeamContextService,
++    private readonly standup: StandupService,
+     private readonly access: AccessService,
+   ) {}
+ 
++  /**
++   * AI daily standup: what each person did since the previous working day, what
++   * is next, what is blocking. Shared with the whole team, so every project
++   * member may read it (it contains no hours or risk scores).
++   */
++  @Header('Cache-Control', 'no-store')
++  @Get(':projectId/standup')
++  async standupSummary(
++    @Param('projectId') projectId: string,
++    @Query('refresh') refresh: string | undefined,
++    @CurrentUser() user: AuthUser,
++  ) {
++    await this.access.assertProject(user, projectId);
++    return this.standup.summarize(projectId, refresh === '1' || refresh === 'true');
++  }
++
+   /** AI burnout risk per team member. `?days=` 7, 14 or 30 (default 14). */
+   @Header('Cache-Control', 'no-store')
+   @Get(':projectId/burnout')
+diff --git a/agilix-backend/src/insights/insights.module.ts b/agilix-backend/src/insights/insights.module.ts
+index 5eeb42f..69bd687 100644
+--- a/agilix-backend/src/insights/insights.module.ts
++++ b/agilix-backend/src/insights/insights.module.ts
+@@ -6,6 +6,7 @@ import { TasksModule } from '../tasks/tasks.module';
+ import { BurnoutRiskService } from './burnout-risk.service';
+ import { InsightsController } from './insights.controller';
+ import { SprintHealthService } from './sprint-health.service';
++import { StandupService } from './standup.service';
+ import { TeamContextService } from './team-context.service';
+ 
+ /**
+@@ -16,7 +17,7 @@ import { TeamContextService } from './team-context.service';
+ @Module({
+   imports: [AiModule, IntegrationsModule, SprintsModule, TasksModule],
+   controllers: [InsightsController],
+-  providers: [TeamContextService, BurnoutRiskService, SprintHealthService],
+-  exports: [TeamContextService, BurnoutRiskService, SprintHealthService],
++  providers: [TeamContextService, BurnoutRiskService, SprintHealthService, StandupService],
++  exports: [TeamContextService, BurnoutRiskService, SprintHealthService, StandupService],
+ })
+ export class InsightsModule {}
+diff --git a/agilix-backend/src/insights/standup.service.ts b/agilix-backend/src/insights/standup.service.ts
+new file mode 100644
+index 0000000..b4f66da
+--- /dev/null
++++ b/agilix-backend/src/insights/standup.service.ts
+@@ -0,0 +1,319 @@
++import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
++import { InjectConnection } from '@nestjs/mongoose';
++import { Connection, isValidObjectId, Types } from 'mongoose';
++import { LlmService, LlmValidationError } from '../ai/llm.service';
++import { GithubActivityService } from '../integrations/github/github-activity.service';
++import { DAY_MS, dayKey, localParts, teamTimeZone } from './team-time';
++
++/** What the AI was given about one person (also returned, so the UI can show the evidence). */
++export interface StandupFacts {
++  userId: string;
++  name: string;
++  role: string;
++  moved: { title: string; to: string; at: string }[];
++  finished: string[];
++  inProgress: { title: string; days: number | null }[];
++  inReview: string[];
++  nextUp: string[];
++  sentBack: { title: string; note: string }[];
++  commits: { message: string; at: string }[];
++}
++
++export interface MemberStandup {
++  userId: string;
++  name: string;
++  yesterday: string[];
++  today: string[];
++  blockers: string[];
++  facts: StandupFacts;
++}
++
++export interface StandupReport {
++  project: { id: string; name: string };
++  /** Activity counted from this moment (start of the previous working day, team time). */
++  since: string;
++  sinceLabel: string;
++  generatedAt: string;
++  github: 'ok' | 'not_linked' | 'not_configured' | 'error';
++  headline: string;
++  members: MemberStandup[];
++}
++
++const STATUS_LABEL: Record<string, string> = {
++  todo: 'To do',
++  in_progress: 'In progress',
++  review: 'Review',
++  done: 'Done',
++};
++const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
++const AGEING_DAYS = 3;
++const CACHE_MS = 10 * 60_000;
++
++const SYSTEM_PROMPT = `You write the DAILY STANDUP for a software team, from activity recorded in their project tool (AgiliX) and their GitHub repository.
++
++For each member write the three classic standup answers:
++- "yesterday": what they got done or worked on since the last standup — tasks finished or moved, and what their commits did (summarise commit messages into plain work items; do not list commit hashes). 0 to 4 short items.
++- "today": what they will most likely work on today — their tasks in progress first, then work waiting for them (sent back from review), then the next To-do tasks. 1 to 3 short items.
++- "blockers": real risks only — a task sent back from review, work stuck in progress for several days, waiting on review. 0 to 3 short items. Use an empty list when nothing is blocking.
++
++Rules:
++- Use ONLY the facts given. Do not invent tasks, people or progress. If someone has no recorded activity, say "No updates recorded" as the single "yesterday" item.
++- Write each item as a short phrase in plain English (max ~15 words), using task titles where helpful.
++- Do not mention working hours or judge anyone's effort.
++- "headline": one or two sentences for the whole team: what moved forward and the most important blocker.
++
++Respond with a single JSON object and nothing else, no markdown:
++{ "headline": "...", "members": [ { "userId": "<exactly as given>", "yesterday": ["..."], "today": ["..."], "blockers": ["..."] } ] }
++Include every member exactly once, using the userId values exactly as given.`;
++
++/**
++ * AI daily standup: per member, what changed since the previous working day
++ * (task moves from AgiliX, commit messages from the GitHub MCP server), what is
++ * next and what is blocking. The facts are collected in code; the LLM writes
++ * them up as a standup and the answer is validated.
++ */
++@Injectable()
++export class StandupService {
++  private readonly logger = new Logger('Standup');
++  private readonly cache = new Map<string, { at: number; report: StandupReport }>();
++
++  constructor(
++    @InjectConnection() private readonly connection: Connection,
++    private readonly github: GithubActivityService,
++    private readonly llm: LlmService,
++  ) {}
++
++  async summarize(projectId: string, refresh = false): Promise<StandupReport> {
++    if (!isValidObjectId(projectId)) throw new BadRequestException('Invalid project id');
++    const cached = this.cache.get(projectId);
++    if (!refresh && cached && Date.now() - cached.at < CACHE_MS) return cached.report;
++
++    const project = (await this.connection
++      .model('Project')
++      .findById(projectId)
++      .select('name owner members githubRepo')
++      .lean()
++      .exec()) as { _id: unknown; name?: string; owner?: unknown; members?: unknown[]; githubRepo?: string } | null;
++    if (!project) throw new NotFoundException('Project not found');
++
++    const timezone = teamTimeZone();
++    const now = Date.now();
++    const { since, label } = previousWorkingDayStart(now, timezone);
++
++    const team = await this.loadTeam(project.owner, project.members ?? []);
++    const projectMatch = { $in: [new Types.ObjectId(projectId), projectId] } as never;
++    const tasks = (await this.connection
++      .model('Task')
++      .find({ project: projectMatch })
++      .select('title status priority assignee startedAt completedAt statusHistory reviewNote')
++      .lean()
++      .exec()) as Array<{
++      title?: string;
++      status?: string;
++      priority?: string;
++      assignee?: unknown;
++      startedAt?: Date | null;
++      completedAt?: Date | null;
++      statusHistory?: { status: string; at: Date }[];
++      reviewNote?: { text?: string; byName?: string } | null;
++    }>;
++
++    // ---- GitHub commit messages since the last standup ----
++    let githubStatus: StandupReport['github'] = 'not_linked';
++    let commits: { login: string | null; message: string; at: string }[] = [];
++    if (project.githubRepo?.trim()) {
++      if (!process.env.GITHUB_MCP_TOKEN?.trim()) {
++        githubStatus = 'not_configured';
++      } else {
++        try {
++          commits = await this.github.getRecentCommits(project.githubRepo.trim(), new Date(since));
++          githubStatus = 'ok';
++        } catch (error) {
++          githubStatus = 'error';
++          this.logger.warn(`GitHub commits unavailable: ${error instanceof Error ? error.message : String(error)}`);
++        }
++      }
++    }
++
++    const facts: StandupFacts[] = team.map((person) => {
++      const mine = tasks.filter((t) => t.assignee && String(t.assignee) === person.id);
++      const moved = mine.flatMap((t) =>
++        (t.statusHistory ?? [])
++          .filter((h) => h.at && +new Date(h.at) >= since)
++          .map((h) => ({ title: t.title ?? '', to: STATUS_LABEL[h.status] ?? h.status, at: new Date(h.at).toISOString() })),
++      );
++      const login = person.githubUsername.toLowerCase();
++      return {
++        userId: person.id,
++        name: person.name,
++        role: person.role,
++        moved,
++        finished: mine
++          .filter((t) => t.status === 'done' && t.completedAt && +new Date(t.completedAt) >= since)
++          .map((t) => t.title ?? ''),
++        inProgress: mine
++          .filter((t) => t.status === 'in_progress')
++          .map((t) => ({
++            title: t.title ?? '',
++            days: t.startedAt ? Math.floor((now - +new Date(t.startedAt)) / DAY_MS) : null,
++          })),
++        inReview: mine.filter((t) => t.status === 'review').map((t) => t.title ?? ''),
++        nextUp: mine
++          .filter((t) => t.status === 'todo')
++          .sort((a, b) => (PRIORITY_ORDER[a.priority ?? 'medium'] ?? 1) - (PRIORITY_ORDER[b.priority ?? 'medium'] ?? 1))
++          .slice(0, 3)
++          .map((t) => t.title ?? ''),
++        sentBack: mine
++          .filter((t) => t.reviewNote && t.status !== 'done')
++          .map((t) => ({ title: t.title ?? '', note: (t.reviewNote?.text ?? '').slice(0, 200) })),
++        commits: login
++          ? commits
++              .filter((c) => c.login?.toLowerCase() === login)
++              .slice(0, 10)
++              .map((c) => ({ message: c.message, at: c.at }))
++          : [],
++      };
++    });
++
++    const base = {
++      project: { id: String(project._id), name: project.name ?? '' },
++      since: new Date(since).toISOString(),
++      sinceLabel: label,
++      generatedAt: new Date().toISOString(),
++      github: githubStatus,
++    };
++    if (facts.length === 0) {
++      return { ...base, headline: 'This project has no team members yet.', members: [] };
++    }
++
++    const ids = facts.map((f) => f.userId);
++    const answer = await this.llm.completeJson({
++      task: 'standup',
++      system: SYSTEM_PROMPT,
++      user: buildPrompt(project.name ?? '', label, githubStatus, facts),
++      validate: (value) => validateAnswer(value, ids),
++      temperature: 0.3,
++      maxTokens: 1500,
++      timeoutMs: 90_000,
++      attemptTimeoutMs: 40_000,
++    });
++
++    const byId = new Map(facts.map((f) => [f.userId, f] as const));
++    const report: StandupReport = {
++      ...base,
++      headline: answer.headline,
++      members: answer.members.map((m) => {
++        const f = byId.get(m.userId) as StandupFacts;
++        return { ...m, name: f.name, facts: f };
++      }),
++    };
++    this.cache.set(projectId, { at: Date.now(), report });
++    return report;
++  }
++
++  private async loadTeam(owner: unknown, members: unknown[]) {
++    const ids = [...new Set([owner, ...members].filter((v) => v != null).map(String))].filter((id) =>
++      isValidObjectId(id),
++    );
++    const users = (await this.connection
++      .model('User')
++      .find({ _id: { $in: ids } })
++      .select('name role githubUsername')
++      .lean()
++      .exec()) as Array<{ _id: unknown; name?: string; role?: string; githubUsername?: string }>;
++    return users
++      .filter((u) => u.role !== 'admin')
++      .map((u) => ({
++        id: String(u._id),
++        name: u.name ?? '',
++        role: u.role ?? 'developer',
++        githubUsername: (u.githubUsername ?? '').trim(),
++      }));
++  }
++}
++
++/**
++ * Start (00:00 team time) of the previous working day: yesterday, or Friday
++ * when today is Saturday, Sunday or Monday.
++ */
++export function previousWorkingDayStart(now: number, timeZone: string): { since: number; label: string } {
++  const back = { Mon: 3, Sun: 2, Sat: 1 }[localParts(now, timeZone).weekday] ?? 1;
++  const target = dayKey(now - back * DAY_MS, timeZone); // YYYY-MM-DD in team time
++  // Find the UTC moment of 00:00 team time on that date (the zone's offset, read at noon UTC).
++  const noonUtc = Date.parse(`${target}T12:00:00Z`);
++  const { hour } = localParts(noonUtc, timeZone);
++  const minutes = Number(
++    new Intl.DateTimeFormat('en-US', { timeZone, minute: '2-digit' }).format(new Date(noonUtc)),
++  );
++  const offsetMinutes = (hour - 12) * 60 + minutes;
++  const since = Date.parse(`${target}T00:00:00Z`) - offsetMinutes * 60_000;
++  const label = new Intl.DateTimeFormat('en-GB', { timeZone, weekday: 'long', day: 'numeric', month: 'short' }).format(
++    new Date(noonUtc),
++  );
++  return { since, label };
++}
++
++function buildPrompt(projectName: string, label: string, github: string, facts: StandupFacts[]): string {
++  const lines = [
++    `Project: ${projectName}`,
++    `Activity since: ${label} (start of the previous working day)`,
++    `GitHub commits: ${github === 'ok' ? 'available' : `not available (${github.replace('_', ' ')})`}`,
++    '',
++    'Members:',
++  ];
++  for (const f of facts) {
++    lines.push(
++      '',
++      `userId: ${f.userId}`,
++      `name: ${f.name} (${f.role})`,
++      `- Tasks moved: ${f.moved.length ? f.moved.map((m) => `"${m.title}" → ${m.to}`).join('; ') : 'none'}`,
++      `- Finished: ${f.finished.length ? f.finished.map((t) => `"${t}"`).join('; ') : 'none'}`,
++      `- In progress now: ${
++        f.inProgress.length
++          ? f.inProgress.map((t) => `"${t.title}"${t.days !== null ? ` (${t.days} days${t.days > AGEING_DAYS ? ', stuck' : ''})` : ''}`).join('; ')
++          : 'none'
++      }`,
++      `- Waiting in review: ${f.inReview.length ? f.inReview.map((t) => `"${t}"`).join('; ') : 'none'}`,
++      `- Sent back from review: ${f.sentBack.length ? f.sentBack.map((s) => `"${s.title}"${s.note ? ` (note: ${s.note})` : ''}`).join('; ') : 'none'}`,
++      `- Next To-do: ${f.nextUp.length ? f.nextUp.map((t) => `"${t}"`).join('; ') : 'none'}`,
++      `- Commits: ${github !== 'ok' ? 'unknown' : f.commits.length ? f.commits.map((c) => `"${c.message}"`).join('; ') : 'none'}`,
++    );
++  }
++  return lines.join('\n');
++}
++
++function validateAnswer(
++  value: unknown,
++  ids: string[],
++): { headline: string; members: Array<Pick<MemberStandup, 'userId' | 'yesterday' | 'today' | 'blockers'>> } {
++  if (!value || typeof value !== 'object') throw new LlmValidationError('answer is not an object');
++  const v = value as Record<string, unknown>;
++  const headline = typeof v.headline === 'string' ? v.headline.trim().slice(0, 500) : '';
++  if (!headline) throw new LlmValidationError('headline is missing');
++  if (!Array.isArray(v.members)) throw new LlmValidationError('members is not an array');
++
++  const list = (x: unknown, max: number) =>
++    Array.isArray(x)
++      ? x.filter((i): i is string => typeof i === 'string' && !!i.trim()).map((i) => i.trim().slice(0, 200)).slice(0, max)
++      : [];
++
++  const seen = new Set<string>();
++  const members = v.members.map((raw) => {
++    if (!raw || typeof raw !== 'object') throw new LlmValidationError('member entry is not an object');
++    const m = raw as Record<string, unknown>;
++    const userId = String(m.userId ?? '').trim();
++    if (!ids.includes(userId)) throw new LlmValidationError('unknown userId in answer');
++    if (seen.has(userId)) throw new LlmValidationError('duplicate userId in answer');
++    seen.add(userId);
++    const yesterday = list(m.yesterday, 4);
++    const today = list(m.today, 3);
++    return {
++      userId,
++      yesterday: yesterday.length ? yesterday : ['No updates recorded'],
++      today: today.length ? today : ['Pick up the next task'],
++      blockers: list(m.blockers, 3),
++    };
++  });
++  if (seen.size !== ids.length) throw new LlmValidationError('not every member was included');
++  return { headline, members };
++}
+diff --git a/agilix-backend/src/integrations/github/github-activity.service.ts b/agilix-backend/src/integrations/github/github-activity.service.ts
+index 919ef64..4d1881c 100644
+--- a/agilix-backend/src/integrations/github/github-activity.service.ts
++++ b/agilix-backend/src/integrations/github/github-activity.service.ts
+@@ -67,7 +67,7 @@ type Person = { login?: string } | string | null | undefined;
+ interface RawCommit {
+   sha?: string;
+   author?: Person;
+-  commit?: { author?: { name?: string; date?: string }; committer?: { date?: string } };
++  commit?: { message?: string; author?: { name?: string; date?: string }; committer?: { date?: string } };
+ }
+ interface RawPull {
+   number?: number;
+@@ -265,6 +265,26 @@ export class GithubActivityService {
+     return report;
+   }
+ 
++  /**
++   * Commits on the repo's default branch since a moment, newest first:
++   * author login, first line of the message and time. Used by the standup summary.
++   */
++  async getRecentCommits(
++    repo: string,
++    since: Date,
++  ): Promise<{ login: string | null; author: string; message: string; at: string }[]> {
++    const [owner, name] = repo.split('/');
++    const commits = await this.fetchCommits(owner, name, since);
++    return commits
++      .map((c) => ({
++        login: loginOf(c.author),
++        author: c.commit?.author?.name ?? '',
++        message: (c.commit?.message ?? '').split('\n')[0].trim().slice(0, 140),
++        at: c.commit?.author?.date ?? c.commit?.committer?.date ?? '',
++      }))
++      .filter((c) => c.at);
++  }
++
+   /** Owner + members with the fields needed to match GitHub logins. */
+   private async loadTeam(owner: unknown, members: unknown[]) {
+     const ids = [...new Set([owner, ...members].filter((v) => v != null).map(String))].filter((id) =>
+diff --git a/agilix-backend/src/mcp/tools/index.ts b/agilix-backend/src/mcp/tools/index.ts
+index cd6f543..458260b 100644
+--- a/agilix-backend/src/mcp/tools/index.ts
++++ b/agilix-backend/src/mcp/tools/index.ts
+@@ -19,7 +19,7 @@ import {
+   recommendPriorityTool,
+   suggestTasksTool,
+ } from './ai.tools';
+-import { burnoutRiskTool, githubActivityTool, sprintHealthTool } from './integration.tools';
++import { burnoutRiskTool, githubActivityTool, sprintHealthTool, standupTool } from './integration.tools';
+ 
+ /**
+  * Every tool exposed by the AgiliX MCP server.
+@@ -70,4 +70,5 @@ export const MCP_TOOLS: AnyMcpToolDefinition[] = [
+   // AI insights over the combined context (AgiliX + GitHub MCP)
+   burnoutRiskTool,
+   sprintHealthTool,
++  standupTool,
+ ];
+diff --git a/agilix-backend/src/mcp/tools/integration.tools.ts b/agilix-backend/src/mcp/tools/integration.tools.ts
+index 118da9b..081ee92 100644
+--- a/agilix-backend/src/mcp/tools/integration.tools.ts
++++ b/agilix-backend/src/mcp/tools/integration.tools.ts
+@@ -2,6 +2,7 @@ import { z } from 'zod';
+ import { GithubActivityService } from '../../integrations/github/github-activity.service';
+ import { BurnoutRiskService } from '../../insights/burnout-risk.service';
+ import { SprintHealthService } from '../../insights/sprint-health.service';
++import { StandupService } from '../../insights/standup.service';
+ import { defineMcpTool } from '../mcp-tool.types';
+ import { actingUser, objectId, requireTeamReports } from './tool-helpers';
+ 
+@@ -70,3 +71,23 @@ export const sprintHealthTool = defineMcpTool({
+     return ctx.get(SprintHealthService).assess(projectId, refresh ?? false);
+   },
+ });
++
++export const standupTool = defineMcpTool({
++  name: 'agilix_get_standup_summary',
++  title: 'AI: daily standup summary',
++  description:
++    'Any project member. The daily standup written by the LLM from recorded activity since the previous ' +
++    'working day: per person what they did (tasks moved or finished, commit messages from the GitHub MCP ' +
++    'server), what they will work on today, and blockers (work sent back from review, tasks stuck in ' +
++    'progress), plus a one-line team headline. Can take up to a minute; cached for 10 minutes.',
++  readOnly: true,
++  inputSchema: {
++    projectId: objectId('project'),
++    refresh: z.boolean().optional().describe('true = ignore the 10-minute cache.'),
++  },
++  handler: async ({ projectId, refresh }, ctx) => {
++    const { user, access } = await actingUser(ctx);
++    await access.assertProject(user, projectId);
++    return ctx.get(StandupService).summarize(projectId, refresh ?? false);
++  },
++});
+diff --git a/agilix-frontend/src/App.tsx b/agilix-frontend/src/App.tsx
+index c65321b..ac29dd8 100644
+--- a/agilix-frontend/src/App.tsx
++++ b/agilix-frontend/src/App.tsx
+@@ -16,6 +16,7 @@ import NewTaskPage from "./components/scrum/NewTaskPage";
+ import ProjectTeamPage from "./components/team/ProjectTeamPage";
+ import ReportsPage from "./components/reports/ReportsPage";
+ import TeamHealthPanel from "./components/ai/TeamHealthPanel";
++import StandupPanel from "./components/ai/StandupPanel";
+ import ProjectCard from "./components/projects/ProjectCard";
+ import ProjectSettings from "./components/projects/ProjectSettings";
+ import ApprovalsPage from "./components/approvals/ApprovalsPage";
+@@ -1318,6 +1319,7 @@ function AiInsightsPage() {
+         </div>
+       )}
+ 
++      {projectId && <StandupPanel projectId={projectId} />}
+       {canSeeTeamHealth && projectId && <TeamHealthPanel projectId={projectId} />}
+     </div>
+   );
+diff --git a/agilix-frontend/src/api/insights.ts b/agilix-frontend/src/api/insights.ts
+index 9676757..8a89432 100644
+--- a/agilix-frontend/src/api/insights.ts
++++ b/agilix-frontend/src/api/insights.ts
+@@ -94,3 +94,29 @@ export function getBurnoutRisk(projectId: string, days = 14, refresh = false) {
+ export function getSprintHealth(projectId: string, refresh = false) {
+   return api<SprintHealthReport>(`/insights/${projectId}/sprint-health${refresh ? "?refresh=1" : ""}`);
+ }
++
++export interface MemberStandup {
++  userId: string;
++  name: string;
++  yesterday: string[];
++  today: string[];
++  blockers: string[];
++  facts: {
++    commits: { message: string; at: string }[];
++    finished: string[];
++    moved: { title: string; to: string; at: string }[];
++  };
++}
++
++export interface StandupReport {
++  sinceLabel: string;
++  generatedAt: string;
++  github: "ok" | "not_linked" | "not_configured" | "error";
++  headline: string;
++  members: MemberStandup[];
++}
++
++/** Every project member can read the standup. */
++export function getStandup(projectId: string, refresh = false) {
++  return api<StandupReport>(`/insights/${projectId}/standup${refresh ? "?refresh=1" : ""}`);
++}
+diff --git a/agilix-frontend/src/components/ai/StandupPanel.tsx b/agilix-frontend/src/components/ai/StandupPanel.tsx
+new file mode 100644
+index 0000000..a8fa0f4
+--- /dev/null
++++ b/agilix-frontend/src/components/ai/StandupPanel.tsx
+@@ -0,0 +1,96 @@
++import { useState } from "react";
++import { getStandup, type StandupReport } from "../../api/insights";
++import { readError } from "../scrum/taskDisplay";
++import "./TeamHealthPanel.css";
++
++/**
++ * AI daily standup for the whole team: yesterday / today / blockers per person,
++ * written by the AI from task moves in AgiliX and commit messages from GitHub.
++ */
++export default function StandupPanel({ projectId }: { projectId: string }) {
++  const [report, setReport] = useState<StandupReport | null>(null);
++  const [loading, setLoading] = useState(false);
++  const [error, setError] = useState("");
++
++  const run = async () => {
++    try {
++      setLoading(true);
++      setError("");
++      setReport(await getStandup(projectId, !!report));
++    } catch (err) {
++      setError(readError(err, "Could not write the standup"));
++    } finally {
++      setLoading(false);
++    }
++  };
++
++  return (
++    <section className="team-health" aria-label="AI daily standup">
++      <article className="team-health-card">
++        <div className="team-health-card-head">
++          <div>
++            <span className="eyebrow">AI DAILY STANDUP</span>
++            <h3>{report ? `Since ${report.sinceLabel}` : "Yesterday · Today · Blockers"}</h3>
++          </div>
++          <button className="primary-button" onClick={run} disabled={loading}>
++            {loading ? "Writing..." : report ? "Run again" : "Write standup"}
++          </button>
++        </div>
++
++        {error && <p className="team-health-error">{error}</p>}
++        {!report && !error && !loading && (
++          <p className="team-health-empty">
++            Written from what changed since the previous working day: tasks moved or finished in AgiliX and
++            commits on GitHub.
++          </p>
++        )}
++
++        {report && (
++          <div className="team-health-result">
++            <p className="team-health-summary">{report.headline}</p>
++            <div className="standup-grid">
++              {report.members.map((member) => (
++                <div className="standup-person" key={member.userId}>
++                  <strong>{member.name}</strong>
++                  <h4>Yesterday</h4>
++                  <ul>
++                    {member.yesterday.map((item) => (
++                      <li key={item}>{item}</li>
++                    ))}
++                  </ul>
++                  <h4>Today</h4>
++                  <ul>
++                    {member.today.map((item) => (
++                      <li key={item}>{item}</li>
++                    ))}
++                  </ul>
++                  {member.blockers.length > 0 && (
++                    <>
++                      <h4 className="standup-blockers">Blockers</h4>
++                      <ul>
++                        {member.blockers.map((item) => (
++                          <li key={item}>{item}</li>
++                        ))}
++                      </ul>
++                    </>
++                  )}
++                  <div className="team-health-evidence">
++                    <span>{member.facts.moved.length} task moves</span>
++                    <span>{member.facts.finished.length} finished</span>
++                    <span>{report.github === "ok" ? `${member.facts.commits.length} commits` : "GitHub: unknown"}</span>
++                  </div>
++                </div>
++              ))}
++            </div>
++            <div className="team-health-sources">
++              <span>
++                Data: AgiliX tasks · GitHub {report.github === "ok" ? "commits" : "not available"} · written{" "}
++                {new Date(report.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
++              </span>
++            </div>
++          </div>
++        )}
++      </article>
++    </section>
++  );
++}
+diff --git a/agilix-frontend/src/components/ai/TeamHealthPanel.css b/agilix-frontend/src/components/ai/TeamHealthPanel.css
+index dc19805..8a960d3 100644
+--- a/agilix-frontend/src/components/ai/TeamHealthPanel.css
++++ b/agilix-frontend/src/components/ai/TeamHealthPanel.css
+@@ -263,3 +263,28 @@
+   font-size: 11px;
+   color: #7a7f72;
+ }
++
++/* ---- AI daily standup ---- */
++.standup-grid {
++  display: grid;
++  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
++  gap: 12px;
++}
++
++.standup-person {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  padding: 12px 14px;
++  border: 1px solid #ece6d6;
++  border-radius: 10px;
++  min-width: 0;
++}
++
++.standup-person strong {
++  font-size: 14px;
++}
++
++.standup-person .standup-blockers {
++  color: #a82c2c;
++}

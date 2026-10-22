@@ -40,7 +40,15 @@ export interface HealthFacts {
   ageingInProgress: number;
   doneLast3Days: number;
   github: TeamContext['githubTeam'];
-  team: Array<{ name: string; openTasks: number; inProgress: number; hoursTracked: number; lateNightHours: number }>;
+  team: Array<{
+    name: string;
+    openTasks: number;
+    inProgress: number;
+    hoursTracked: number;
+    lateNightHours: number;
+    /** From Google Calendar; null when the person has not connected it. */
+    meetings: { hours: number; next7DaysHours: number; outOfOfficeDaysNext7: number } | null;
+  }>;
 }
 
 export interface SprintHealthReport {
@@ -74,6 +82,7 @@ Rules:
 - Base every judgement ONLY on the data given. Do not invent facts, people or blockers. All numbers are already calculated; use them as given.
 - A data source marked as not available means UNKNOWN, not zero.
 - Signals of poor health: progress behind time elapsed; scope added after the sprint started; many tasks still To do late in the sprint; items stuck In Progress (ageing); work piling up in Review; WIP above the limit; falling throughput; unassigned work; pull requests merged with no reviews; stale open pull requests; commits concentrated on a few days (crunch) or long quiet gaps; one person carrying most of the load or working late nights.
+- Capacity: meeting hours and out-of-office days (from Google Calendar) reduce the time left for sprint work; heavy upcoming meetings or absences near the end of a sprint lower the forecast. People without calendar data have UNKNOWN meeting load.
 - Signals of good health: steady daily progress, work finishing regularly, reviews happening, balanced load.
 - Status: "healthy" = on track with no serious issues; "at_risk" = recoverable problems that need attention now; "critical" = unlikely to deliver, or serious process problems.
 - Score: integer 0-100 where 100 is very healthy, consistent with the status (critical 0-39, at_risk 40-69, healthy 70-100).
@@ -154,6 +163,13 @@ export class SprintHealthService {
       inProgress: m.tasks.inProgress,
       hoursTracked: m.work.hoursTracked,
       lateNightHours: m.work.lateNightHours,
+      meetings: m.calendar
+        ? {
+            hours: m.calendar.meetingHours,
+            next7DaysHours: m.calendar.next7Days.meetingHours,
+            outOfOfficeDaysNext7: m.calendar.next7Days.outOfOfficeDays,
+          }
+        : null,
     }));
     const isAgeing = (t: (typeof tasks)[number]) =>
       t.status === 'in_progress' && !!t.startedAt && now - new Date(t.startedAt).getTime() > AGEING_DAYS * DAY_MS;
@@ -237,7 +253,7 @@ function buildPrompt(ctx: TeamContext, f: HealthFacts): string {
     `Mode: ${f.mode}`,
     `Project: ${ctx.project.name} (${ctx.project.methodology})`,
     `Today: ${ctx.until.slice(0, 10)}`,
-    `Data sources: AgiliX tasks available; GitHub ${ctx.sources.github === 'ok' ? 'available' : `NOT available (${ctx.sources.github})`}; Calendar NOT available.`,
+    `Data sources: AgiliX tasks available; GitHub ${ctx.sources.github === 'ok' ? 'available' : `NOT available (${ctx.sources.github})`}; Calendar ${ctx.sources.calendar === 'ok' ? 'available (meeting times only, for people who connected it)' : `NOT available (${ctx.sources.calendar.replace('_', ' ')})`}.`,
     '',
   ];
 
@@ -281,7 +297,10 @@ function buildPrompt(ctx: TeamContext, f: HealthFacts): string {
   lines.push(`Team load (last ${ctx.windowDays} days):`);
   for (const m of f.team) {
     lines.push(
-      `- ${m.name}: ${m.openTasks} open tasks (${m.inProgress} in progress), ${m.hoursTracked} h tracked, ${m.lateNightHours} h late at night`,
+      `- ${m.name}: ${m.openTasks} open tasks (${m.inProgress} in progress), ${m.hoursTracked} h tracked, ${m.lateNightHours} h late at night; ` +
+        (m.meetings
+          ? `meetings ${m.meetings.hours} h in the window, ${m.meetings.next7DaysHours} h booked in the next 7 days, ${m.meetings.outOfOfficeDaysNext7} out-of-office days in the next 7 days`
+          : 'meetings unknown (no calendar connected)'),
     );
   }
   return lines.join('\n');

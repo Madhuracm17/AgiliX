@@ -9,6 +9,7 @@ import {
   MCP_WRITE_TOOLS_ENABLED,
 } from './mcp-server.constants';
 import { toToolError, toToolResult } from './mcp-results';
+import { registerAgilixPrompts, registerAgilixResources } from './mcp-content.register';
 import type {
   AnyMcpToolDefinition,
   McpToolContext,
@@ -131,6 +132,10 @@ export function createAgilixMcpServer(
 
     registeredNames.add(tool.name);
   }
+
+  // Resources (agilix:// data) and prompts (ready-made workflows), same account and checks.
+  registerAgilixResources(server, context);
+  registerAgilixPrompts(server, context);
 
   logger.log(
     `Registered ${registeredNames.size} MCP tool(s): ${

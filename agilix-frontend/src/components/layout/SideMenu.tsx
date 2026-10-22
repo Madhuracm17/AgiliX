@@ -116,6 +116,13 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
     onClose();
   };
 
+  const onActivity = /^\/projects\/[^/]+\/activity$/.test(location.pathname);
+  // Activity log of the same project the board link opens.
+  const openActivity = () => {
+    navigate(boardTarget ? `/projects/${boardTarget._id}/activity` : "/projects");
+    onClose();
+  };
+
   const openBoard = () => {
     // With no project yet, the Projects page explains what to do.
     navigate(boardTarget ? boardPath(boardTarget) : "/projects");
@@ -168,6 +175,15 @@ export default function SideMenu({ open, onClose }: SideMenuProps) {
                 onClick={openInsights}
               >
                 AI Insights
+              </button>
+
+              <button
+                type="button"
+                tabIndex={open ? 0 : -1}
+                className={`side-menu-link ${onActivity ? "active" : ""}`}
+                onClick={openActivity}
+              >
+                Activity
               </button>
             </>
           )}

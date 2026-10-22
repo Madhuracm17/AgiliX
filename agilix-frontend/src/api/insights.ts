@@ -1,4 +1,5 @@
 import { api } from "./client";
+import type { CalendarLoad } from "./calendar";
 
 /* AI team insights: AgiliX + GitHub (MCP) data, analysed by the LLM. Managers and admins. */
 
@@ -44,7 +45,8 @@ export interface MemberSignals {
     stalePrs: number;
     reviewsGiven: number;
   } | null;
-  calendar: null;
+  /** Google Calendar meeting load; null when the person has not connected a calendar. */
+  calendar: CalendarLoad | null;
 }
 
 export interface MemberBurnoutRisk {
@@ -81,6 +83,7 @@ export interface SprintHealthReport {
     flow?: { wip: number; wipLimit: number; throughputThisPeriod: number; throughputPreviousPeriod: number; medianCycleDays: number | null };
     ageingInProgress: number;
     github: { commits: number; prsMerged: number; reviews: number; stalePrs: number } | null;
+    team?: Array<{ name: string; meetings: { hours: number; next7DaysHours: number; outOfOfficeDaysNext7: number } | null }>;
   };
   notes: string[];
 }
