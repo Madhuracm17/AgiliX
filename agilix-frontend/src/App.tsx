@@ -1136,28 +1136,31 @@ function ProjectOverviewBody() {
 
       </div>
 
-      <div className="project-workspace-card">
-        <span className="eyebrow">PROJECT WORKSPACE</span>
+      {/* Backlog → Sprint is the Scrum flow, so this is not shown for Kanban projects. */}
+      {(project.methodology || "scrum") !== "kanban" && (
+        <div className="project-workspace-card">
+          <span className="eyebrow">PROJECT WORKSPACE</span>
 
-        <h2>Build your Agile workflow</h2>
+          <h2>Build your Agile workflow</h2>
 
-        <p>
-          AgiliX brings your backlog, sprints, tasks, team, reports and AI
-          insights together in one workspace.
-        </p>
+          <p>
+            AgiliX brings your backlog, sprints, tasks, team, reports and AI
+            insights together in one workspace.
+          </p>
 
-        <div className="workflow-steps">
-          <span>Backlog</span>
-          <span>→</span>
-          <span>Sprint</span>
-          <span>→</span>
-          <span>In Progress</span>
-          <span>→</span>
-          <span>Review</span>
-          <span>→</span>
-          <span>Done</span>
+          <div className="workflow-steps">
+            <span>Backlog</span>
+            <span>→</span>
+            <span>Sprint</span>
+            <span>→</span>
+            <span>In Progress</span>
+            <span>→</span>
+            <span>Review</span>
+            <span>→</span>
+            <span>Done</span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -1656,31 +1659,24 @@ function KanbanBoardPage() {
     }
   };
 
-  // Editing a task's title, description and priority on its card (managers and admins only).
+  // Editing a task on its card: only its priority and assignee, by managers and admins.
+  // The title and description stay as they were created (the backend refuses them too).
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
   const [editPriority, setEditPriority] = useState<Task["priority"]>("medium");
+  const [editAssignee, setEditAssignee] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
   const startEdit = (task: Task) => {
     setEditingId(task._id);
-    setEditTitle(task.title);
-    setEditDescription(task.description ?? "");
     setEditPriority(task.priority);
+    setEditAssignee(task.assignee?._id ?? "");
   };
 
   const saveEdit = async (task: Task) => {
-    const newTitle = editTitle.trim();
-    if (!newTitle) {
-      alert("Please enter a task title.");
-      return;
-    }
-    // Only what changed is sent. Managers only; the backend checks too.
-    const changes: Partial<Pick<Task, "title" | "description" | "priority">> = {};
-    if (newTitle !== task.title) changes.title = newTitle;
-    if (editDescription.trim() !== (task.description ?? "")) changes.description = editDescription.trim();
+    // Only what changed is sent.
+    const changes: { priority?: Task["priority"]; assignee?: string | null } = {};
     if (editPriority !== task.priority) changes.priority = editPriority;
+    if (editAssignee !== (task.assignee?._id ?? "")) changes.assignee = editAssignee || null;
     if (Object.keys(changes).length === 0) {
       setEditingId(null);
       return;
@@ -1696,7 +1692,19 @@ function KanbanBoardPage() {
         alert(await failureMessage(response, "We could not save your changes."));
         return;
       }
-      setTasks((prev) => prev.map((t) => (t._id === task._id ? { ...t, ...changes } : t)));
+      const newAssignee =
+        changes.assignee === undefined
+          ? task.assignee
+          : changes.assignee === null
+            ? null
+            : people.find((p) => p._id === changes.assignee) ?? task.assignee;
+      setTasks((prev) =>
+        prev.map((t) =>
+          t._id === task._id
+            ? { ...t, priority: changes.priority ?? t.priority, assignee: newAssignee as Task["assignee"] }
+            : t,
+        ),
+      );
       setEditingId(null);
     } catch {
       alert("We could not reach the server, so nothing was saved.");
@@ -2132,35 +2140,41 @@ function KanbanBoardPage() {
           limits={{ in_progress: wipLimit }}
           renderCard={(task, overlay) => (
             <>
-              {!overlay && editingId === task._id ? (
-                // Editing: the form takes the place of the title and description.
+              <h3>{task.title}</h3>
+              <p>{task.description || "No description"}</p>
+
+              {!overlay && editingId === task._id && (
+                // Editing: priority and assignee only; the title and description stay fixed.
                 <div
                   className="kanban-edit"
                   onMouseDown={(e) => e.stopPropagation()}
                   onTouchStart={(e) => e.stopPropagation()}
                 >
-                  <input
-                    aria-label="Task title"
-                    value={editTitle}
-                    maxLength={200}
-                    autoFocus
-                    onChange={(e) => setEditTitle(e.target.value)}
-                  />
-                  <textarea
-                    aria-label="Task description"
-                    placeholder="Description"
-                    value={editDescription}
-                    rows={3}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                  />
                   <select
                     aria-label="Priority"
                     value={editPriority}
+                    autoFocus
                     onChange={(e) => setEditPriority(e.target.value as Task["priority"])}
                   >
                     <option value="low">Low priority</option>
                     <option value="medium">Medium priority</option>
                     <option value="high">High priority</option>
+                  </select>
+                  <select
+                    aria-label="Assignee"
+                    value={editAssignee}
+                    onChange={(e) => setEditAssignee(e.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {/* Keep the current assignee listed even if they have left the team. */}
+                    {task.assignee && !people.some((p) => p._id === task.assignee?._id) && (
+                      <option value={task.assignee._id}>{task.assignee.name}</option>
+                    )}
+                    {people.map((person) => (
+                      <option key={person._id} value={person._id}>
+                        {personLabel(person, currentUser._id)}
+                      </option>
+                    ))}
                   </select>
                   <div className="kanban-edit-actions">
                     <button
@@ -2181,11 +2195,6 @@ function KanbanBoardPage() {
                     </button>
                   </div>
                 </div>
-              ) : (
-                <>
-                  <h3>{task.title}</h3>
-                  <p>{task.description || "No description"}</p>
-                </>
               )}
 
               <div className="task-card-meta">
