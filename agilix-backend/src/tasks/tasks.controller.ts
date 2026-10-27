@@ -96,7 +96,14 @@ export class TasksController {
 
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateTaskDto, @CurrentUser() user: AuthUser) {
-    this.forbidAdmin(user);
+    // Admins take no other part in project work, but they can change a task's
+    // priority and assignee like a manager.
+    if (user.role === UserRole.ADMIN) {
+      const fields = Object.keys(dto).filter((key) => dto[key as keyof UpdateTaskDto] !== undefined);
+      if (fields.some((key) => key !== 'priority' && key !== 'assignee')) {
+        throw new ForbiddenException(ADMIN_MESSAGE);
+      }
+    }
     const { projectId, assignee } = await this.access.assertTask(user, id);
 
     // Changing who a task is assigned to or how important it is belongs to managers and admins.
@@ -110,19 +117,13 @@ export class TasksController {
     }
     if (dto.assignee) await this.access.assertAssignee(projectId, dto.assignee);
 
-    // Title and description describe what was asked for, so only managers and
-    // admins change them (developers and testers need approval even to create
-    // a task). Others can leave a comment instead.
+    // Title and description are fixed once a task is created: they describe what
+    // was asked for (and approved). Editing covers only priority and assignee;
+    // anything else about the task goes in a comment.
     if (dto.title !== undefined || dto.description !== undefined) {
-      requireRole(
-        user,
-        'Only a manager can edit a task. Please ask a manager to change it.',
-        UserRole.ADMIN,
-        UserRole.MANAGER,
+      throw new ForbiddenException(
+        "A task's title and description cannot be changed. Only its priority and assignee can be edited.",
       );
-      if (dto.title !== undefined && !dto.title.trim()) {
-        throw new BadRequestException('The task title cannot be empty.');
-      }
     }
 
     // Story points: the person doing the task estimates it, and managers can
