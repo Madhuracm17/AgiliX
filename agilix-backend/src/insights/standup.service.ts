@@ -194,8 +194,6 @@ export class StandupService {
       validate: (value) => validateAnswer(value, ids),
       temperature: 0.3,
       maxTokens: 1500,
-      timeoutMs: 90_000,
-      attemptTimeoutMs: 40_000,
     });
 
     const byId = new Map(facts.map((f) => [f.userId, f] as const));

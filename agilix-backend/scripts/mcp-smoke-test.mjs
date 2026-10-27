@@ -160,6 +160,29 @@ try {
       `Invalid id is rejected: ${textOf(bad)}`,
     );
   }
+
+  // ---- Resources and prompts ----
+  const { resources } = await client.listResources(undefined, { timeout: REQUEST_TIMEOUT_MS });
+  const { resourceTemplates } = await client.listResourceTemplates(undefined, { timeout: REQUEST_TIMEOUT_MS });
+  const uris = [...resources.map((r) => r.uri), ...resourceTemplates.map((t) => t.uriTemplate)];
+  check(
+    uris.includes('agilix://guide/workflow') && uris.includes('agilix://projects/{projectId}'),
+    `resources: ${resources.length} resource(s) and ${resourceTemplates.length} template(s)`,
+  );
+  const guide = await client.readResource({ uri: 'agilix://guide/workflow' }, { timeout: REQUEST_TIMEOUT_MS });
+  check(
+    (guide.contents?.[0]?.text ?? '').startsWith('# How AgiliX works'),
+    'agilix://guide/workflow can be read',
+  );
+
+  const { prompts } = await client.listPrompts(undefined, { timeout: REQUEST_TIMEOUT_MS });
+  const promptNames = prompts.map((p) => p.name);
+  const EXPECTED_PROMPTS = ['plan_sprint', 'daily_standup', 'sprint_retrospective', 'team_health_check', 'triage_backlog', 'explain_task'];
+  const missingPrompts = EXPECTED_PROMPTS.filter((name) => !promptNames.includes(name));
+  check(
+    missingPrompts.length === 0,
+    `prompts: ${promptNames.join(', ')}${missingPrompts.length ? ` (missing: ${missingPrompts.join(', ')})` : ''}`,
+  );
 } catch (error) {
   passed = false;
   console.error(`✖ Smoke test failed: ${error instanceof Error ? error.message : String(error)}`);

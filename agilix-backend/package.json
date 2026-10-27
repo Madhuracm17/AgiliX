@@ -10,7 +10,12 @@
     "mcp": "node dist/mcp/mcp-main.js",
     "mcp:test": "node scripts/mcp-smoke-test.mjs",
     "mcp:inspect": "npx @modelcontextprotocol/inspector node dist/mcp/mcp-main.js",
-    "seed:demo": "node scripts/seed-demo.mjs"
+    "seed:demo": "node scripts/seed-demo.mjs",
+    "test": "jest",
+    "test:ai": "jest test/ai",
+    "test:integrations": "jest test/integrations",
+    "test:collaboration": "jest test/collaboration",
+    "test:mcp": "jest test/mcp"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
@@ -34,8 +39,34 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",
+    "@types/jest": "^29.5.14",
     "@types/node": "^20.14.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
     
     "typescript": "^5.5.0"
+  },
+  "jest": {
+    "rootDir": ".",
+    "roots": [
+      "<rootDir>/test"
+    ],
+    "testRegex": ".*\\.spec\\.ts$",
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "json"
+    ],
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": "tsconfig.spec.json"
+        }
+      ]
+    },
+    "testEnvironment": "node",
+    "clearMocks": true,
+    "restoreMocks": true
   }
 }

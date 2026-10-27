@@ -51,6 +51,7 @@ Rules:
   4. Overload: many open tasks or story points at once, several tasks in progress in parallel, tasks stuck in progress (ageing).
   5. Spiky "crunch" patterns: many commits on one day after quiet days.
   6. Carrying review load or open pull requests for others on top of their own work.
+  7. Meeting overload (Google Calendar): more than about 4 meeting hours per working day on average, days with 4+ meetings (no focus time), many back-to-back meetings, meetings late at night or at weekends. Meetings ADD to tracked task hours; they are not double counted.
 - Being productive is NOT a burnout sign by itself; look for the pattern of strain.
 - Levels: "low" = no meaningful warning signs; "medium" = some signs, worth watching or small adjustments; "high" = several strong signs together, act now.
 - Score: integer 0-100 consistent with the level (low 0-34, medium 35-64, high 65-100).
@@ -68,7 +69,8 @@ Include every member exactly once, using the userId values exactly as given.`;
 
 /**
  * AI burnout risk per team member. The numbers come from TeamContextService
- * (AgiliX time tracking and tasks, GitHub through the GitHub MCP server); the
+ * (AgiliX time tracking and tasks, GitHub through the GitHub MCP server, and
+ * meeting load from Google Calendar); the
  * LLM interprets them and explains its verdict. The answer is validated before
  * it is returned, and the measured signals are returned with it as evidence.
  */
@@ -182,7 +184,18 @@ function buildPrompt(ctx: TeamContext): string {
           : '- GitHub: unknown (GitHub data not available)',
       );
     }
-    lines.push('- Meetings: unknown (Calendar not connected)');
+    if (m.calendar) {
+      const c = m.calendar;
+      lines.push(
+        `- Meetings (Google Calendar): ${c.meetingHours} h in ${c.meetings} meetings on ${c.meetingDays} days ` +
+          `(avg ${c.avgHoursPerWorkday} h per working day, heaviest day ${c.heaviestDayHours} h); ` +
+          `${c.backToBackMeetings} back-to-back; ${c.fragmentedDays} days with 4+ meetings; ` +
+          `late-night ${c.lateNightMeetingHours} h; weekend ${c.weekendMeetingHours} h; ` +
+          `next 7 days: ${c.next7Days.meetingHours} h booked, ${c.next7Days.outOfOfficeDays} out-of-office days`,
+      );
+    } else {
+      lines.push('- Meetings: unknown (no Google Calendar connected for this person)');
+    }
   }
 
   return lines.join('\n');

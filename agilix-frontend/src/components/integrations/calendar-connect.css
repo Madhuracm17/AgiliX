@@ -1,0 +1,50 @@
+.calendar-connect {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.calendar-connect-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.calendar-connect-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calendar-connect-state {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.calendar-connect-state.is-on {
+  opacity: 1;
+  font-weight: 600;
+}
+
+.calendar-connect-row button {
+  padding: 6px 12px;
+  font: inherit;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.calendar-connect-row button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.calendar-connect small {
+  font-size: 11px;
+  opacity: 0.75;
+}

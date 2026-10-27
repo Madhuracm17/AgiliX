@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection, isValidObjectId, Types } from 'mongoose';
 import { GithubActivityService, MemberGithubActivity } from '../integrations/github/github-activity.service';
+import type { CalendarLoad } from '../integrations/google-calendar/calendar-load';
+import { GoogleCalendarService, MemberCalendar } from '../integrations/google-calendar/google-calendar.service';
 import {
   DAY_MS,
   dayKey,
@@ -50,8 +52,8 @@ export interface MemberSignals {
   };
   /** From the GitHub MCP server; null when GitHub is not available or the person is not linked. */
   github: Omit<MemberGithubActivity, 'userId' | 'name' | 'role' | 'githubUsername' | 'linked'> | null;
-  /** From the Calendar MCP server; null until Calendar is connected. */
-  calendar: null;
+  /** From Google Calendar (meeting times only); null when the person has not connected it. */
+  calendar: CalendarLoad | null;
 }
 
 export interface TeamContext {
@@ -86,8 +88,8 @@ interface TaskRecord {
 
 /**
  * Builds the "context payload" for the AI insights: per-member signals from
- * AgiliX (MongoDB) and GitHub (through the GitHub MCP server). Calendar data
- * will be added here once the Calendar MCP connection exists.
+ * AgiliX (MongoDB), GitHub (through the GitHub MCP server) and Google Calendar
+ * (meeting times only, for people who connected their calendar).
  */
 @Injectable()
 export class TeamContextService {
@@ -96,6 +98,7 @@ export class TeamContextService {
   constructor(
     @InjectConnection() private readonly connection: Connection,
     private readonly github: GithubActivityService,
+    private readonly calendar: GoogleCalendarService,
   ) {}
 
   async build(projectId: string, daysParam?: number | string): Promise<TeamContext> {
@@ -125,7 +128,7 @@ export class TeamContextService {
     const projectMatch = { $in: [new Types.ObjectId(projectId), projectId] } as never;
 
     const team = await this.loadTeam(project.owner, project.members ?? []);
-    const [tasks, entries, githubResult] = await Promise.all([
+    const [tasks, entries, githubResult, calendarResult] = await Promise.all([
       this.connection
         .model('Task')
         .find({ project: projectMatch })
@@ -139,6 +142,7 @@ export class TeamContextService {
         .lean()
         .exec() as Promise<Array<{ user?: unknown; startTime?: Date; endTime?: Date }>>,
       this.loadGithub(projectId, project.githubRepo, days),
+      this.loadCalendars(team.map((p) => p.id), since, now),
     ]);
 
     const githubByUser = new Map(
@@ -192,6 +196,9 @@ export class TeamContextService {
       // Days with tracked time OR commits both count as working days for the streak.
       const workedDays = new Set(hoursByDay.keys());
       for (const day of gh?.commitDays ?? []) workedDays.add(day);
+      // ...and so do days with meetings.
+      const cal = calendarResult.byUser.get(person.id);
+      for (const day of cal?.meetingDays ?? []) workedDays.add(day);
 
       return {
         userId: person.id,
@@ -218,7 +225,7 @@ export class TeamContextService {
           donePointsInWindow: doneInWindow.reduce((sum, t) => sum + (t.storyPoints || 0), 0),
         },
         github,
-        calendar: null,
+        calendar: cal?.load ?? null,
       };
     });
 
@@ -230,7 +237,16 @@ export class TeamContextService {
     if (githubResult.status === 'ok' && unlinked.length) {
       notes.push(`No GitHub username for: ${unlinked.join(', ')}.`);
     }
-    notes.push('Google Calendar is not connected yet, so meeting load is not included.');
+    if (calendarResult.status === 'not_configured') {
+      notes.push('Google Calendar is not set up on the server (GOOGLE_CLIENT_ID), so meeting load is not included.');
+    } else {
+      const noCalendar = members.filter((m) => !m.calendar).map((m) => m.name);
+      if (noCalendar.length === members.length && members.length) {
+        notes.push('Nobody on the team has connected Google Calendar yet, so meeting load is not included.');
+      } else if (noCalendar.length) {
+        notes.push(`No Google Calendar connected for: ${noCalendar.join(', ')}.`);
+      }
+    }
 
     const report = githubResult.report;
     return {
@@ -245,7 +261,7 @@ export class TeamContextService {
       since: new Date(since).toISOString(),
       until: new Date(now).toISOString(),
       timezone,
-      sources: { agilix: 'ok', github: githubResult.status, calendar: 'not_connected' },
+      sources: { agilix: 'ok', github: githubResult.status, calendar: calendarResult.status },
       members,
       githubTeam: report
         ? { ...report.totals, dailyCommits: report.dailyCommits }
@@ -267,6 +283,23 @@ export class TeamContextService {
       this.logger.warn(`GitHub activity unavailable: ${error instanceof Error ? error.message : String(error)}`);
       return { status: 'error' as SourceStatus, report: null };
     }
+  }
+
+  /** Each member's meeting load from Google Calendar. Never fails the whole insight. */
+  private async loadCalendars(userIds: string[], since: number, now: number) {
+    const byUser = new Map<string, MemberCalendar>();
+    if (!this.calendar.isConfigured()) return { status: 'not_configured' as SourceStatus, byUser };
+    const results = await Promise.all(
+      userIds.map(async (id) => [id, await this.calendar.memberCalendar(id, since, now)] as const),
+    );
+    for (const [id, cal] of results) byUser.set(id, cal);
+    const statuses = results.map(([, cal]) => cal.status);
+    const status: SourceStatus = statuses.includes('ok')
+      ? 'ok'
+      : statuses.includes('error')
+        ? 'error'
+        : 'not_connected';
+    return { status, byUser };
   }
 
   /** Owner + members, without admins (they do not do project work). */

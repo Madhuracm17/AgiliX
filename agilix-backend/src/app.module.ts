@@ -16,6 +16,7 @@ import { ApprovalsModule } from './approvals/approvals.module';
 import { TeamInvitesModule } from './team-invites/team-invites.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { InsightsModule } from './insights/insights.module';
+import { CollaborationModule } from './collaboration/collaboration.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { InsightsModule } from './insights/insights.module';
     TeamInvitesModule,
     IntegrationsModule,
     InsightsModule,
+    CollaborationModule,
   ],
 })
 export class AppModule {}

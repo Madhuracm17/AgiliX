@@ -1,0 +1,64 @@
+# AgiliX CI: builds both apps and runs the backend tests on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agilix-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agilix-backend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Build (TypeScript)
+        run: npm run build
+      - name: Unit tests (AI, integrations, MCP)
+        run: npm test -- --ci
+        env:
+          # The tests never call OpenRouter or Google (both are mocked); these only satisfy config checks.
+          JWT_SECRET: ci-only-secret-ci-only-secret-ci-only-secret
+          TEAM_TIMEZONE: Asia/Kolkata
+
+  frontend:
+    name: Frontend — build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agilix-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agilix-frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Build (TypeScript + Vite)
+        run: npm run build
+      - name: Lint (report only)
+        run: npm run lint
+        continue-on-error: true
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t agilix-backend ./agilix-backend
+      - run: docker build --build-arg VITE_API_URL=http://localhost:3000 -t agilix-frontend ./agilix-frontend

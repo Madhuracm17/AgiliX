@@ -19,7 +19,16 @@ import {
   recommendPriorityTool,
   suggestTasksTool,
 } from './ai.tools';
-import { burnoutRiskTool, githubActivityTool, sprintHealthTool, standupTool } from './integration.tools';
+import {
+  burnoutRiskTool,
+  calendarLoadTool,
+  githubActivityTool,
+  sprintHealthTool,
+  standupTool,
+} from './integration.tools';
+import { listCommentsTool, projectActivityTool } from './collaboration.tools';
+import { MCP_WRITE_TOOLS } from './write.tools';
+import { MCP_WRITE_TOOLS_ENABLED } from '../mcp-server.constants';
 
 /**
  * Every tool exposed by the AgiliX MCP server.
@@ -66,9 +75,18 @@ export const MCP_TOOLS: AnyMcpToolDefinition[] = [
 
   // Outside data read through other MCP servers (AgiliX as MCP client)
   githubActivityTool,
+  calendarLoadTool,
 
-  // AI insights over the combined context (AgiliX + GitHub MCP)
+  // AI insights over the combined context (AgiliX + GitHub MCP + Google Calendar)
   burnoutRiskTool,
   sprintHealthTool,
   standupTool,
+
+  // Collaboration: comments and the activity log
+  listCommentsTool,
+  projectActivityTool,
+
+  // Tools that change data. They run the SAME checks as the web app (they call the
+  // HTTP controllers), and are only registered when MCP_WRITE_TOOLS_ENABLED is true.
+  ...(MCP_WRITE_TOOLS_ENABLED ? MCP_WRITE_TOOLS : []),
 ];

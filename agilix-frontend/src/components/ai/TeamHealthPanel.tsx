@@ -26,7 +26,7 @@ const SOURCE_LABEL: Record<string, string> = {
 
 /**
  * AI team health for managers: sprint / flow health and burnout risk per
- * person. The backend gathers AgiliX and GitHub (MCP) data, the LLM analyses
+ * person. The backend gathers AgiliX, GitHub (MCP) and Google Calendar data, the LLM analyses
  * it, and the measured numbers are shown next to each verdict as evidence.
  */
 export default function TeamHealthPanel({ projectId }: { projectId: string }) {
@@ -158,7 +158,7 @@ export default function TeamHealthPanel({ projectId }: { projectId: string }) {
           {burnoutError && <p className="team-health-error">{burnoutError}</p>}
           {!burnout && !burnoutError && !loadingBurnout && (
             <p className="team-health-empty">
-              Looks for long hours, late-night and weekend work, no rest days and overload, per person.
+              Looks for long hours, late-night and weekend work, no rest days, meeting overload and too much work at once, per person.
             </p>
           )}
 
@@ -201,6 +201,13 @@ function MemberRow({ member }: { member: MemberBurnoutRisk }) {
     ...(s.github
       ? [`${s.github.commits} commits (${s.github.lateNightCommits} late night)`, `${s.github.reviewsGiven} reviews`]
       : ["GitHub: unknown"]),
+    ...(s.calendar
+      ? [
+          `${s.calendar.meetingHours} h meetings (${s.calendar.avgHoursPerWorkday} h/workday)`,
+          `${s.calendar.backToBackMeetings} back-to-back`,
+          `${s.calendar.next7Days.meetingHours} h booked next 7 days`,
+        ]
+      : ["Calendar: unknown"]),
   ];
 
   return (
@@ -257,6 +264,12 @@ function HealthFacts({ report }: { report: SprintHealthReport }) {
   if (f.github) {
     items.push(`${f.github.commits} commits`, `${f.github.prsMerged} PRs merged`, `${f.github.reviews} reviews`);
   }
+  const withCalendar = (f.team ?? []).filter((m) => m.meetings);
+  if (withCalendar.length) {
+    const next7 = withCalendar.reduce((sum, m) => sum + (m.meetings?.next7DaysHours ?? 0), 0);
+    const away = withCalendar.reduce((sum, m) => sum + (m.meetings?.outOfOfficeDaysNext7 ?? 0), 0);
+    items.push(`${Math.round(next7 * 10) / 10} h meetings next 7 days`, `${away} days out of office`);
+  }
   return (
     <div className="team-health-evidence">
       {items.map((item) => (
@@ -274,11 +287,9 @@ function Sources({ sources, generatedAt, notes = [] }: { sources: InsightSources
         {SOURCE_LABEL[sources.calendar] ?? sources.calendar} · analysed{" "}
         {new Date(generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </span>
-      {notes
-        .filter((note) => !note.startsWith("Google Calendar"))
-        .map((note) => (
-          <span key={note}>{note}</span>
-        ))}
+      {notes.map((note) => (
+        <span key={note}>{note}</span>
+      ))}
     </div>
   );
 }

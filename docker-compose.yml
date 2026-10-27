@@ -1,0 +1,45 @@
+# Run the whole of AgiliX with Docker:
+#
+#   docker compose up --build
+#
+# Web app: http://localhost:5173   Backend: http://localhost:3000
+#
+# The backend reads agilix-backend/.env (MongoDB Atlas, JWT, OpenRouter, GitHub, Google...).
+# No Atlas? Set MONGODB_URI=mongodb://mongo:27017/agilix in agilix-backend/.env and
+# start a local MongoDB with the app:
+#
+#   docker compose --profile local-db up --build
+
+services:
+  backend:
+    build: ./agilix-backend
+    env_file: ./agilix-backend/.env
+    environment:
+      PORT: "3000"
+      FRONTEND_URL: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./agilix-frontend
+      args:
+        VITE_API_URL: http://localhost:3000
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    profiles: ["local-db"]
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  mongo-data:

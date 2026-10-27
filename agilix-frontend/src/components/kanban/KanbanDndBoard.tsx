@@ -17,6 +17,7 @@ import {
   type DraggableSyntheticListeners,
 } from "@dnd-kit/core";
 import "./kanban.css";
+import TaskCommentsButton from "../collab/TaskCommentsButton";
 
 /**
  * Kanban board with drag-and-drop (B1).
@@ -157,6 +158,7 @@ export default function KanbanDndBoard<T extends BoardTask>({
                   disabled={canDrag ? !canDrag(task) : false}
                 >
                   {renderCard(task, false)}
+                  <TaskCommentsButton taskId={task._id} title={task.title} />
                 </DraggableCard>
               ))}
             </DroppableColumn>

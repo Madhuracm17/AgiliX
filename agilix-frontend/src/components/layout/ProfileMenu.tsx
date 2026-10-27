@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { initialOf, useAuth } from "../../auth/auth-context";
 import { getUser, setMyGithubUsername } from "../../api/users";
+import CalendarConnect from "../integrations/CalendarConnect";
 import "./profile-menu.css";
 
 /** "developer" → "Developer" */
@@ -120,6 +121,8 @@ export default function ProfileMenu() {
             </div>
             <small>{githubStatus || "Links your commits and pull requests to you."}</small>
           </div>
+
+          <CalendarConnect />
 
           <button
             type="button"
