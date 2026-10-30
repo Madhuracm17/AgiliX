@@ -33,6 +33,11 @@ export class TimeEntriesController {
     // A tester reviewing a sprint task that is in Review can time that review,
     // even though the task is assigned to someone else.
     const testerReview = user.role === UserRole.TESTER && status === 'review' && inSprint;
+    // On a sprint board, a task in Review is timed only by the tester reviewing it,
+    // not by the person who did the work.
+    if (inSprint && status === 'review' && user.role !== UserRole.TESTER) {
+      throw new ForbiddenException('This task is in Review, so only a tester can time it.');
+    }
     // Otherwise only the person the task is assigned to can time it (not even a manager).
     if (!testerReview) {
       if (!assignee) {

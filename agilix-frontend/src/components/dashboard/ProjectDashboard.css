@@ -512,7 +512,8 @@
 
 .dash-task-table li {
   display: grid;
-  grid-template-columns: 130px minmax(0, 1fr) minmax(0, 0.8fr) auto;
+  /* Fixed last column, so every row lines up with the rows above and below it. */
+  grid-template-columns: 130px minmax(0, 1fr) minmax(0, 0.8fr) 84px;
   align-items: center;
   gap: 12px;
   padding: 10px 8px;
@@ -550,6 +551,12 @@
   font-weight: 600;
   color: #30342e;
   background: #ffffff;
+}
+
+.dash-task-table .dash-badge {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 /* Clickable activity lines. */

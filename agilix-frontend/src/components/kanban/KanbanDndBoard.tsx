@@ -51,6 +51,8 @@ type Props<T extends BoardTask> = {
   canDrag?: (task: T) => boolean;
   /** Whether the card being dragged may be dropped on this column. Missing = any column. */
   canDrop?: (task: T, status: string) => boolean;
+  /** Show the comments button on each card. Missing = shown (Kanban); the Scrum board turns it off. */
+  showComments?: boolean;
 };
 
 // Mouse: a 6px move starts a drag, so clicks on buttons inside a card still work.
@@ -74,6 +76,7 @@ export default function KanbanDndBoard<T extends BoardTask>({
   classPrefix = "kanban",
   canDrag,
   canDrop,
+  showComments = true,
 }: Props<T>) {
   const sensors = useSensors(
     useSensor(MouseSensor, MOUSE),
@@ -158,7 +161,7 @@ export default function KanbanDndBoard<T extends BoardTask>({
                   disabled={canDrag ? !canDrag(task) : false}
                 >
                   {renderCard(task, false)}
-                  <TaskCommentsButton taskId={task._id} title={task.title} />
+                  {showComments && <TaskCommentsButton taskId={task._id} title={task.title} />}
                 </DraggableCard>
               ))}
             </DroppableColumn>

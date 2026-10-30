@@ -254,6 +254,22 @@ function TaskTimer({ task }: { task: Task }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEntryId]);
 
+  // On the Scrum board a task in Review is timed by the tester who reviews it, not by the
+  // person who did the work. If the assignee's own timer is still running when the task
+  // reaches Review, it is stopped, and from then on they only see the total.
+  const inSprintReview = task.status === "review" && !!task.sprint && !reviewTimer;
+  useEffect(() => {
+    if (!inSprintReview || !activeEntryId) return;
+    (async () => {
+      const response = await fetch(`${API_URL}/time-entries/${activeEntryId}/stop`, {
+        method: "PATCH",
+      });
+      if (response.ok) setActiveEntryId(null);
+      await load();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inSprintReview, activeEntryId]);
+
   const start = async () => {
     // The time is saved for whoever is logged in; the server decides that, not this page.
     const response = await fetch(`${API_URL}/time-entries/start`, {
@@ -322,7 +338,7 @@ function TaskTimer({ task }: { task: Task }) {
   }
 
   // A finished task needs no timer, and nobody else can time it: only the time spent is shown.
-  if (task.status === "done" || !isMine) {
+  if (task.status === "done" || !isMine || inSprintReview) {
     return (
       <div className="task-timer">
         <span className="timer-total">Total: {formatDuration(totalSeconds)}</span>
@@ -1088,30 +1104,6 @@ function ProjectOverviewBody() {
             Manage Team
           </button>
         </div>
-
-        {currentUser.role !== "admin" && (
-          <div className="dashboard-card">
-            <div className="dashboard-card-header">
-              <div>
-                <span className="eyebrow">AI INSIGHTS</span>
-                <h2>Team Health</h2>
-              </div>
-            </div>
-
-            <p>
-              {currentUser.role === "manager"
-                ? "AI sprint health and burnout risk for each person, from tasks, tracked time and GitHub activity."
-                : "AI sprint risk for the active sprint."}
-            </p>
-
-            <button
-              className="secondary-button"
-              onClick={() => navigate(`/projects/${projectId}/ai-insights`)}
-            >
-              Open AI Insights
-            </button>
-          </div>
-        )}
 
         <div className="dashboard-card">
           <div className="dashboard-card-header">

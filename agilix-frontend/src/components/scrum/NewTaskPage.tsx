@@ -35,8 +35,8 @@ export default function NewTaskPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  // Admins and managers assign tasks to team members. Developers and testers
-  // create tasks for themselves (or leave them unassigned).
+  // Admins and managers assign tasks to team members (or leave them unassigned).
+  // Developers and testers create tasks for themselves only.
   const canAssignOthers = canEditTaskPlan(user.role);
   const people = useProjectPeople(canAssignOthers ? projectId : undefined);
 
@@ -286,7 +286,6 @@ export default function NewTaskPage() {
               ) : (
                 <>
                   <option value={user._id}>Myself</option>
-                  <option value="">Unassigned</option>
                 </>
               )}
             </select>

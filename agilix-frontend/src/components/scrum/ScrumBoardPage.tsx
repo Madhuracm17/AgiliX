@@ -194,18 +194,8 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
   // Completed sprints are a record: their board can no longer be changed.
   const sprintIsLocked = selectedSprint?.status === "completed";
 
-  // Finished tasks stay on the board only until the sprint's last date. After that
-  // they are hidden (they are still counted in the progress bar and the reports).
-  const pastLastDate = (() => {
-    if (!selectedSprint) return false;
-    const end = new Date(selectedSprint.endDate);
-    end.setHours(23, 59, 59, 999);
-    return Date.now() > end.getTime();
-  })();
-  const visibleTasks = pastLastDate
-    ? sprintTasks.filter((t) => t.status !== "done")
-    : sprintTasks;
-  const hiddenDoneCount = sprintTasks.length - visibleTasks.length;
+  // Finished tasks stay in the Done column, also after the sprint's last date.
+  const visibleTasks = sprintTasks;
 
   // To Do → In Progress → Review is the assignee's own work, so only they can do it
   // (not even a manager). Review → Done is the sign-off by a tester, manager or admin.
@@ -562,12 +552,6 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
             </button>
           )}
           <button
-            className="secondary-button"
-            onClick={() => navigate(`/projects/${projectId}/approvals`)}
-          >
-            Approvals
-          </button>
-          <button
             className="primary-button"
             onClick={() =>
               navigate(`/projects/${projectId}/backlog`, { state: { from: "scrum-board" } })
@@ -695,13 +679,6 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
             />
           )}
 
-          {hiddenDoneCount > 0 && (
-            <p className="scrum-hidden-note">
-              {hiddenDoneCount} completed {hiddenDoneCount === 1 ? "task is" : "tasks are"} no longer
-              shown because this sprint's last date has passed. They still count in the reports.
-            </p>
-          )}
-
           {sprintTasks.length === 0 && (
             <p className="page-description scrum-hint">
               No tasks in this sprint yet. Create tasks and add them to this
@@ -711,6 +688,7 @@ export default function ScrumBoardPage({ renderTaskTools }: ScrumBoardPageProps)
 
           <KanbanDndBoard
             classPrefix="scrum"
+            showComments={false}
             columns={SCRUM_COLUMNS}
             tasks={visibleTasks}
             canDrag={canDrag}
